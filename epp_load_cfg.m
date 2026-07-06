@@ -27,9 +27,8 @@ if ~isempty(cfg.project_version)
     end
 end
 
-if isfield(cfg, 'EPOCHS')
-    cfg.EPOCHS = epochs_table_to_struct(cfg.EPOCHS);
-end
+cfg.EPOCHS = epochs_table_to_struct(cfg.EPOCHS);
+cfg.statistics.comparisons = build_statistics_comparisons(cfg.statistics);
 
 root_fields = fieldnames(cfg.roots);
 for i = 1:numel(root_fields)
@@ -44,13 +43,24 @@ end
 function epochs = epochs_table_to_struct(epochs_table)
 % Convert cfg.EPOCHS cell table to struct array (same field style as cfg.WINDOWS).
 %
-% Settings files define rows as:
-%   name | state | start | end | baseline
-% Empty rows (blank name) are skipped so lines can be added/removed easily.
+% Settings rows: name | state | start | end
+% Empty rows (blank name) are skipped.
 
+if isstruct(epochs_table)
+    epochs = epochs_table(:);
+    return;
+end
 
-epochs = repmat(struct( ...
-    'name', '', 'align_state', [], 't_start_s', [], 't_end_s', [], 'baseline', ''), 0, 1);
+epochs = repmat(struct('name', '', 'align_state', [], 't_start_s', [], 't_end_s', []), 0, 1);
+
+if isempty(epochs_table) || ~iscell(epochs_table)
+    return;
+end
+
+if size(epochs_table, 2) ~= 4
+    error('epp_load_cfg:InvalidEpochsColumns', ...
+        'EPOCHS table must have 4 columns: name, state, start, end.');
+end
 
 for r = 1:size(epochs_table, 1)
     name_val = epochs_table{r, 1};
@@ -63,8 +73,72 @@ for r = 1:size(epochs_table, 1)
     ep.align_state = epochs_table{r, 2};
     ep.t_start_s = epochs_table{r, 3};
     ep.t_end_s = epochs_table{r, 4};
-    ep.baseline = epochs_table{r, 5};
     epochs = [epochs; ep]; %#ok<AGROW>
 end
+end
+
+function comparisons = build_statistics_comparisons(statistics)
+% Merge within_epoch and across_epochs tables into one comparison struct array.
+
+comparisons = repmat(empty_comparison_struct(), 0, 1);
+
+for r = 1:size(statistics.within_epoch, 1)
+    if isempty(statistics.within_epoch{r, 1})
+        continue;
+    end
+    cmp = comparison_row_to_struct(statistics.within_epoch(r, :), ...
+        'within_epoch', statistics.within_epoch_test);
+    comparisons = [comparisons; cmp]; %#ok<AGROW>
+end
+
+for r = 1:size(statistics.across_epochs, 1)
+    if isempty(statistics.across_epochs{r, 1})
+        continue;
+    end
+    cmp = comparison_row_to_struct(statistics.across_epochs(r, :), ...
+        'across_epochs', statistics.across_epochs_test);
+    comparisons = [comparisons; cmp]; %#ok<AGROW>
+end
+end
+
+function cmp = comparison_row_to_struct(row, comparison_scope, test_name)
+if numel(row) ~= 4
+    error('epp_load_cfg:InvalidComparisonColumns', ...
+        'Statistics comparison rows need 4 columns (see within_epoch / across_epochs format).');
+end
+
+cmp = empty_comparison_struct();
+cmp.comparison_scope = comparison_scope;
+cmp.name = row{1};
+cmp.epoch = row{2};
+cmp.conditions = condition_index_vector(row{3});
+cmp.test = test_name;
+
+switch comparison_scope
+    case 'within_epoch'
+        cmp.baseline_epoch = row{2};
+        cmp.baseline_conditions = condition_index_vector(row{4});
+    case 'across_epochs'
+        cmp.baseline_epoch = row{4};
+        cmp.baseline_conditions = cmp.conditions;
+    otherwise
+        error('epp_load_cfg:UnknownComparisonScope', ...
+            'Unknown comparison scope: %s', comparison_scope);
+end
+end
+
+function cmp = empty_comparison_struct()
+cmp = struct( ...
+    'comparison_scope', '', ...
+    'name', '', ...
+    'epoch', '', ...
+    'conditions', [], ...
+    'baseline_epoch', '', ...
+    'baseline_conditions', [], ...
+    'test', '');
+end
+
+function idx = condition_index_vector(value)
+idx = double(value(:).');
 end
 

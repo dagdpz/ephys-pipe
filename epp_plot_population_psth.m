@@ -1,5 +1,5 @@
 function epp_plot_population_psth(cfg)
-% Stage 5: aggregate per-unit PSTHs into population mean +/- SEM plots.
+% Stage 4: aggregate per-unit PSTHs into population mean +/- SEM plots.
 
 unit_psths = load_unit_psth_data(cfg.roots.psth);
 if isempty(unit_psths)

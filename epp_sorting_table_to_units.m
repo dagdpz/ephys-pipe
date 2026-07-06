@@ -63,13 +63,37 @@ for r = 1:size(filtered_rows,1)
         else
             value_out = filtered_rows{r,c};
         end
-        if strcmpi(field_names{c}, 'Blocks')
+        if strcmpi(field_names{c}, 'Blocks') || strcmpi(field_names{c}, 'Perturbation')
             value_out = parse_blocks_cell(value_out);
         end
         units(r).(field_names{c}) = value_out;
     end
+    units(r) = normalize_unit_blocks_and_perturbation(units(r));
 end
 
+end
+
+function unit_row = normalize_unit_blocks_and_perturbation(unit_row)
+% Perturbation is a numeric vector parallel to Blocks (same pipe-list format).
+blocks = unit_row.Blocks(:).';
+n_blocks = numel(blocks);
+
+if ~isfield(unit_row, 'Perturbation') || isempty(unit_row.Perturbation)
+    unit_row.Perturbation = zeros(1, n_blocks);
+    return;
+end
+
+perturbations = unit_row.Perturbation(:).';
+if isscalar(perturbations)
+    perturbations = repmat(perturbations, 1, n_blocks);
+elseif numel(perturbations) ~= n_blocks
+    error('epp_sorting_table_to_units:PerturbationBlockMismatch', ...
+        'Unit %s: %d Perturbation value(s) for %d Blocks.', ...
+        unit_row.Neuron_ID, numel(perturbations), n_blocks);
+end
+
+unit_row.Blocks = blocks;
+unit_row.Perturbation = perturbations;
 end
 
 function blocks = parse_blocks_cell(value)

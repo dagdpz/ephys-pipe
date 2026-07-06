@@ -1,15 +1,13 @@
 function trials = epp_enrich_trials_for_unit(trials, unit_row)
-% Attach sorting-table metadata to trials and flip lateral variables by
-% recorded hemisphere (epp_build_rasters, once per unit).
+% Flip lateral trial variables by recorded hemisphere (epp_build_rasters).
 %
-% Reads unit_row.Hemisphere and unit_row.Perturbation from final_sorting.
-% Overwrites target positions, hand fields, hemifield, and sets trial.perturbation.
+% Reads unit_row.Hemisphere from final_sorting. Perturbation and block are
+% set earlier during block alignment in load_unit_combined.
 
 if isempty(trials)
     return;
 end
 
-perturbation = get_unit_table_field(unit_row, 'Perturbation', 0);
 hemisphere_value = get_unit_table_field(unit_row, 'Hemisphere', []);
 rec_hemi_sign = parse_recorded_hemisphere(hemisphere_value);
 
@@ -33,19 +31,15 @@ for f = target_pos_fields
     [trials.(f{:})] = deal(OUT{:});
 end
 
-
-for f=hand_fields
-   IN=[trials.(f{:})];
-   OUT=IN;
-   OUT(IN==1)=-1; %left hand
-   OUT(IN==2)=1; %right hand
-   OUT=num2cell(OUT*rec_hemi_sign);
-
-   [trials.(f{:})]=deal(OUT{:});
+for f = hand_fields
+    if ~isfield(trials, f{1}), continue; end
+    IN = [trials.(f{:})];
+    OUT = IN;
+    OUT(IN == 1) = -1; % left hand
+    OUT(IN == 2) = 1;  % right hand
+    OUT = num2cell(OUT * rec_hemi_sign);
+    [trials.(f{:})] = deal(OUT{:});
 end
-
-[trials.perturbation] = deal(perturbation);
-
 end
 
 function value = get_unit_table_field(unit_row, field_name, default_value)
@@ -62,7 +56,7 @@ rec_hemi_sign = NaN;
 if isempty(hemisphere_value)
     return;
 end
-hemisphere_text = lower(strtrim(hemisphere_value));
+hemisphere_text = lower(hemisphere_value);
 last_char = hemisphere_text(end);
 if last_char == 'l'
     rec_hemi_sign = 1;

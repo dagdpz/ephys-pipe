@@ -1,5 +1,5 @@
 function epp_plot_psth(cfg)
-% Stage 4: load rasters, condition-split, and plot PSTH + rasters.
+% Stage 3: load rasters, condition-split, and plot PSTH + rasters.
 
 load(fullfile(cfg.roots.processed_trials, 'unit_info.mat'), 'unit_info');
 
