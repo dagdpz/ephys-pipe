@@ -12,9 +12,10 @@ function epp_update_sorting_table(monkey,dates)
 
 max_depth_delta_for_same_file = 50;
 dag_drive=DAG_get_server_IP;
+threshold_used='negthr'; % to be changed to 'both'
 
-main_folder             =[dag_drive filesep 'Projects' filesep 'spikesorting' filesep 'testdata' filesep 'merge_data_structure' filesep 'TDTbrain' filesep];
-%main_folder             =[dag_drive filesep 'Data' filesep 'TDTtanks' filesep monkey '_phys' filesep];
+%main_folder             =[dag_drive filesep 'Projects' filesep 'spikesorting' filesep 'testdata' filesep 'merge_data_structure' filesep 'TDTbrain' filesep];
+main_folder             =[dag_drive filesep 'Data' filesep 'TDTtanks' filesep monkey '_phys' filesep];
 
 main_folder_content     =dir(main_folder);
 main_folder_content     =main_folder_content([main_folder_content.isdir]);
@@ -77,7 +78,7 @@ for s =1:numel(subfolders)
     end
     %matfiles=dir([main_folder date filesep 'spikes' filesep 'dataspikes*negthr.mat']);
     
-    matfiles=dir([main_folder date filesep 'dataspikes*negthr.mat']);
+    matfiles=dir([main_folder date filesep 'dataspikes*' threshold_used '.mat']);
     
     matfiles={matfiles.name};
     matfiles=sort(matfiles);
@@ -89,7 +90,7 @@ for s =1:numel(subfolders)
         
         load([main_folder date filesep matfile]);
         %load([main_folder date filesep 'spikes' filesep matfile]);
-        Channel=str2double(extractBetween(matfile,'_ch','.mat'));
+        Channel=str2double(extractBetween(matfile,'_ch',['_' threshold_used]));
         Filenumber=str2double(extractBetween(matfile,'_rb','_ch'));
         
         
