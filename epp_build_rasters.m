@@ -1,4 +1,31 @@
 function epp_build_rasters(cfg)
+%EPP_BUILD_RASTERS  Stage 2: per-unit rasters and epoch statistics.
+%
+%   epp_build_rasters(cfg)
+%
+%   Inputs:
+%     cfg - struct from epp_load_cfg. Reads unit_info.mat and *_Block-*.mat from
+%           cfg.roots.processed_trials. Uses cfg.WINDOWS, cfg.EPOCHS,
+%           cfg.CONDITIONS, cfg.raster_bin_size_s, cfg.statistics.comparisons,
+%           cfg.roots.ephys_tanks, raster, statistics.
+%
+%   Outputs:
+%     none. Per unit, writes cfg.roots.raster/<Neuron_ID>_raster.mat
+%     (variable raster_data). Also writes cfg.roots.statistics/unit_statistics.mat
+%     and unit_statistics.xlsx.
+%
+%   raster_data.Neuron_ID - char.
+%   raster_data.windows   - cfg.WINDOWS plus, per window:
+%       bin_edges, bin_centers, bin_size_s, event_times, raster (counts),
+%       rate_hz, trial (behavior struct active at each align event).
+%   unit_statistics(u).Neuron_ID, .comparisons.<name> with n_a, n_b, p, tstat,
+%   df, mean_a, mean_b and the comparison metadata.
+%
+%   Spike file (UltraSort): dataspikes_rb<FFF>_ch<CCC>_negthr.mat with
+%   cluster_class (sort code, time in ms) and par.segmentends / par.sr.
+%   Block i of the unit is time-shifted by segment start i. Trials are then
+%   passed through epp_enrich_trials_for_unit.
+%
 % Stage 2: per-unit aligned data, event-aligned rasters, and epoch statistics.
 %
 % For each unit: load spikes, align behavioral blocks, enrich trials, then

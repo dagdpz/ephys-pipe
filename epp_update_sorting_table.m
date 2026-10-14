@@ -1,4 +1,30 @@
 function epp_update_sorting_table(monkey,dates)
+%EPP_UPDATE_SORTING_TABLE  Rebuild the automatic_sorting sheet from spikes.
+%
+%   epp_update_sorting_table(monkey)
+%   epp_update_sorting_table(monkey, dates)
+%
+%   Inputs:
+%     monkey - char/string, at least 3 characters (e.g. 'Flaffus').
+%     dates  - optional numeric vector of YYYYMMDD session dates. Omit to scan
+%              every YYYYMMDD subfolder.
+%
+%   Reads (not via cfg; paths come from DAG_get_server_IP):
+%     <drive>\Data\TDTtanks\<monkey>_phys\<YYYYMMDD>\dataspikes_*negthr.mat
+%         cluster_class col 1 = sort code, col 2 = spike time in ms.
+%     <drive>Data\Sorting_tables\<monkey>\Electrode_depths_<monkey(1:3)>.m
+%         script that must assign Session, block, channels, z.
+%     <drive>Data\Sorting_tables\<monkey>\<monkey(1:3)>_UltraSort.xlsx
+%         sheet final_sorting if present, else automatic_sorting, else a
+%         header-only table.
+%
+%   Outputs:
+%     none. Writes sheet automatic_sorting in that workbook. Does not modify
+%     final_sorting. Columns filled here: Monkey, Session, Filenumber, Blocks,
+%     Channel, z, Unit, N_spk, Neuron_ID, Site_ID. Other columns are copied
+%     from the previous sheet when session/channel/file/unit match.
+%     Blocks are pipe text ('|2|5|'). Unit 0 marks a channel with no sort codes.
+%
 % INPUT: epp_update_sorting_table('Flaffus',[20160608,20160609])
 % automatically updates '<monkey>_UltraSort.xlsx' in the sorting table path
 % note that this function takes information from the "final_sorting" sheet,

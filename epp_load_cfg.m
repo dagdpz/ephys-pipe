@@ -1,4 +1,22 @@
 function cfg = epp_load_cfg(project, version)
+%EPP_LOAD_CFG  Build cfg from general, project, and version settings.
+%
+%   cfg = epp_load_cfg(project, version)
+%
+%   Inputs:
+%     project - char/string. Loads ../Settings/<project>/epp/epp_project_settings.m
+%               when that file exists (warning if missing).
+%     version - char/string. Stored as cfg.project_version and used to load
+%               epp_<version>_settings.m from the same folder (warning if missing).
+%
+%   Outputs:
+%     cfg - struct. Settings scripts are run() in this function's workspace and
+%           must assign into cfg. cfg.EPOCHS is converted from a cell table
+%           (name, state, start, end) to a struct array with name, align_state,
+%           t_start_s, t_end_s. cfg.statistics.comparisons is a struct array
+%           merged from cfg.statistics.within_epoch and .across_epochs.
+%           Every non-empty cfg.roots.* folder is created if it does not exist,
+%           including input roots.
 
 if nargin < 1 || isempty(project)
     error('Provide project name.');

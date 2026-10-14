@@ -1,4 +1,20 @@
 function combined = epp_concatenate_aligned_data(combined, chunk)
+%EPP_CONCATENATE_ALIGNED_DATA  Append one aligned run/block onto another.
+%
+%   combined = epp_concatenate_aligned_data(combined, chunk)
+%
+%   Inputs:
+%     combined, chunk - structs with:
+%         .trial                 - struct arrays with the same fields
+%         .state.Value           - state codes
+%         .state.timestamps      - state times (seconds)
+%         .sample.x_hnd, .y_hnd, .x_eye, .y_eye, .timestamps
+%                                  column vectors
+%   Outputs:
+%     combined - chunk rows appended under those fields. Other fields on
+%                combined (for example spike_times) are left as they are.
+%                Vectors are forced to columns with (:).
+
 combined.trial = [combined.trial; chunk.trial(:)];                                          % #ok<AGROW>
 combined.state.Value = [combined.state.Value; chunk.state.Value(:)];                        % #ok<AGROW>
 combined.state.timestamps = [combined.state.timestamps; chunk.state.timestamps(:)];         % #ok<AGROW>

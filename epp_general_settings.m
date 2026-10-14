@@ -1,4 +1,22 @@
 function cfg = epp_general_settings(project, cfg)
+%EPP_GENERAL_SETTINGS  Default paths and analysis parameters.
+%
+%   cfg = epp_general_settings(project, cfg)
+%
+%   Inputs:
+%     project - char/string. Project folder name under ../Settings/.
+%     cfg     - struct, optional. Must already contain cfg.project_version
+%               (set by epp_load_cfg). Missing cfg starts from struct().
+%
+%   Outputs:
+%     cfg - same struct with cfg.roots.* (settings, sorting_tables,
+%           ephys_tanks, behavior, project_version, processed_trials, raster,
+%           psth, population_psth, statistics), cfg.monkeys, cfg.datasets,
+%           cfg.raster_bin_size_s, cfg.WINDOWS, cfg.EPOCHS (cell table),
+%           cfg.CONDITIONS, cfg.psth, and cfg.statistics filled in.
+%           Existing fields are overwritten. Project/version scripts may
+%           override them afterward.
+%
 % Minimal general settings for epp_initiation.
 %
 % This only defines paths required by the unit initializer.

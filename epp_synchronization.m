@@ -1,4 +1,33 @@
 function [sync_data, report]=epp_synchronization(ephys_data,behavioral_data,debug_on)
+%EPP_SYNCHRONIZATION  Map one behavioral run onto one TDT block clock.
+%
+%   [sync_data, report] = epp_synchronization(ephys_data, behavioral_data)
+%   [sync_data, report] = epp_synchronization(ephys_data, behavioral_data, debug_on)
+%
+%   Inputs:
+%     ephys_data      - struct from TDTbin2mat_working. Requires epocs.Tnum
+%                       (.data, .onset), epocs.RunN.data, epocs.SVal
+%                       (.data, .onset). debug_on also reads epocs.Sess.data.
+%     behavioral_data - .trial (struct array) and .run (run number to keep).
+%                       The loop indexes trial by trial.n, so trial(k).n must
+%                       equal k. Each trial needs .state, .tSample_from_time_start
+%                       (column), .states, .states_onset, and a sample with
+%                       state == 2.
+%     debug_on        - optional logical, default true. Applies the legacy
+%                       Tnum/RunN/Sess cleanup heuristics before alignment.
+%
+%   Outputs:
+%     sync_data - struct:
+%         .continuous_timestamps             - sample times in ephys block seconds
+%         .Trial_timestamps                  - ephys time of state 2 per kept trial
+%         .retained_trial_numbers            - ephys Tnum values kept
+%         .retained_behavior_trial_numbers   - behavior trial numbers iterated
+%         .state_onsets, .state_timestamps   - behavior state times in ephys time
+%                                              (the two fields are the same)
+%         .state_values                      - behavior state codes
+%       Early failure leaves these empty.
+%     report - char. Messages that were displayed, joined by ' | '.
+%
 %epp_synchronization Align behavioral timing to ephys block time.
 %   This function maps timing from behavioral trial structure to timestamps
 %   relative to the start of a given TDT ephys block.

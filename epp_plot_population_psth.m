@@ -1,4 +1,22 @@
 function epp_plot_population_psth(cfg)
+%EPP_PLOT_POPULATION_PSTH  Stage 4: mean PSTH across units.
+%
+%   epp_plot_population_psth(cfg)
+%
+%   Inputs:
+%     cfg - struct from epp_load_cfg. Reads *_psth.mat from cfg.roots.psth
+%           (skips a file named population_psth.mat). Uses cfg.CONDITIONS
+%           for names and colors. Requires shadedErrorBar on the path.
+%
+%   Outputs:
+%     none. Writes cfg.roots.population_psth/population_psth.png and
+%     population_psth.mat (variable pop_data).
+%     pop_data.n_units, pop_data.Neuron_ID (cellstr).
+%     pop_data.windows(wi).name, .align_state, .conditions(ci) with name,
+%     n_units, n_trials_total, bin_centers_s, mean_rate_hz, sem_rate_hz.
+%     Mean and SEM are across units, not across trials. Window layout is
+%     taken from the first loaded unit.
+%
 % Stage 4: aggregate per-unit PSTHs into population mean +/- SEM plots.
 
 unit_psths = load_unit_psth_data(cfg.roots.psth);

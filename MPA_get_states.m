@@ -1,4 +1,18 @@
 function MPA_get_states
+%MPA_GET_STATES  Fill the global MA_STATES trial-state code table.
+%
+%   MPA_get_states
+%
+%   Inputs:
+%     none.
+%
+%   Outputs:
+%     none. Sets global MA_STATES. Numeric codes used by this pipeline:
+%       INI_TRI=1, FIX_ACQ=2, FIX_HOL=3, TAR_ACQ=4, TAR_HOL=5, CUE_ON=6,
+%       MEM_PER=7, DEL_PER=8, TAR_ACQ_INV=9, SUCCESS=20, REWARD=21, ITI=50,
+%       SAC_INI=60, SAC_END=61, REA_INI=62, REA_END=63, SUCCESS_ABORT=-1.
+%     Overwrites whatever MA_STATES was set to.
+
 global MA_STATES
 MA_STATES.INI_TRI       = 1; % initialize trial
 MA_STATES.FIX_ACQ       = 2; % fixation acquisition

@@ -1,4 +1,23 @@
 function data = TDTbin2mat_working(BLOCK_PATH, varargin)
+%TDTBIN2MAT_WORKING  Read one TDT block from disk into a struct.
+%
+%   data = TDTbin2mat_working(BLOCK_PATH)
+%   data = TDTbin2mat_working(BLOCK_PATH, 'Name', value, ...)
+%
+%   Inputs:
+%     BLOCK_PATH - char. Block folder (the one that contains the .tsq/.tev).
+%     Name/value pairs are documented in the original header below.
+%     Pipeline call uses 'EXCLUSIVELYREAD', {'SVal','Tnum','RunN','Sess'}.
+%     DONTREAD is a cell array of store names to skip. EXCLUSIVELYREAD, when
+%     non-empty, skips every store not listed. CHANNELS is the channel list
+%     honored by stores named in STREAMSWITHLIMITEDCHANNELS (0 = all).
+%     VERBOSE nonzero prints progress.
+%
+%   Outputs:
+%     data.epocs.<Store>.onset, .offset, .data
+%     data.snips, data.streams, data.scalars, data.info
+%     'HEADERS', 1 returns headerStruct instead of data.
+%
 %TDTBIN2MAT  TDT tank data extraction.
 %   data = TDTbin2mat(BLOCK_PATH), where BLOCK_PATH is a string, retrieves
 %   all data from specified block directory in struct format.  This reads

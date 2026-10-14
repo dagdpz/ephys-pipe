@@ -1,4 +1,29 @@
 function epp_prepare_blocks(cfg)
+%EPP_PREPARE_BLOCKS  Stage 1: sync behavior to TDT blocks and save payloads.
+%
+%   epp_prepare_blocks(cfg)
+%
+%   Inputs:
+%     cfg - struct from epp_load_cfg. Uses cfg.monkeys, cfg.datasets,
+%           cfg.roots.sorting_tables, ephys_tanks, behavior, processed_trials.
+%
+%   Outputs:
+%     none. Writes into cfg.roots.processed_trials:
+%       unit_info.mat              - struct array of sorting-table units, plus .monkey
+%       <monkey>_<YYYYMMDD>_Block-<NNN>.mat
+%                                  - variable block_payload with fields
+%                                    monkey, session, block, trial, state, sample
+%       prepare_blocks_report.txt  - one line per run: ephys path, behavior file,
+%                                    run number, sync messages
+%
+%   block_payload.trial   - behavior trials kept by sync, with .timestamp set to
+%                           the ephys time of state 2. Sample-wise fields
+%                           (state, x_hnd, y_hnd, x_eye, y_eye, tSample_...) removed.
+%   block_payload.state   - .Value and .timestamps (ephys time) from behavior states.
+%   block_payload.sample  - x_hnd, y_hnd, x_eye, y_eye, timestamps (ephys time).
+%   Per-trial sample vectors must be columns; timestamps are zipped by position,
+%   not by trial number.
+%
 % Stage 1: build unit_info and save processed block payloads.
 
 unit_info = struct([]);

@@ -1,4 +1,24 @@
 function trials = epp_enrich_trials_for_unit(trials, unit_row)
+%EPP_ENRICH_TRIALS_FOR_UNIT  Flip lateral trial fields by recorded hemisphere.
+%
+%   trials = epp_enrich_trials_for_unit(trials, unit_row)
+%
+%   Inputs:
+%     trials   - struct array from the concatenated block payload. Empty
+%                input is returned unchanged. Perturbation and block are not
+%                set here.
+%     unit_row - one unit struct. Required fields: Neuron_ID, Hemisphere.
+%                Hemisphere must end in L/l (+1) or R/r (-1). Anything else
+%                errors.
+%
+%   Outputs:
+%     trials - same array. These fields, when present, have the real part
+%              multiplied by the hemisphere sign (imaginary part kept):
+%              tar_pos, nct_pos, fix_pos, reach_tar_pos_closest,
+%              saccade_tar_pos_closest, hemifield.
+%              demanded_hand, used_hand, reach_hand: 1 -> -1, 2 -> +1, then
+%              multiplied by the same sign. Other codes are only scaled.
+%
 % Flip lateral trial variables by recorded hemisphere (epp_build_rasters).
 %
 % Reads unit_row.Hemisphere from final_sorting. Perturbation and block are

@@ -1,4 +1,27 @@
 function [synchronization_results, synchronization_report] = epp_general_synchronization_check(ephys_main_folder, behavior_main_folder)
+%EPP_GENERAL_SYNCHRONIZATION_CHECK  Sync every TDT block against behavior.
+%
+%   [synchronization_results, synchronization_report] = ...
+%       epp_general_synchronization_check(ephys_main_folder, behavior_main_folder)
+%
+%   Inputs:
+%     ephys_main_folder    - day folders YYYYMMDD, each with Block-* tanks.
+%     behavior_main_folder - day folders YYYYMMDD of MonkeyPsych .mat files.
+%                            A file matches a run when its name contains
+%                            YYYY-MM-DD and ends in _<run>.mat.
+%
+%   Outputs:
+%     synchronization_results - struct array: day_folder, block_folder,
+%         behavior_file, run_number, continuous_timestamps, Trial_timestamps.
+%     synchronization_report  - struct array with the same path fields plus
+%         messages (char from epp_synchronization and local warnings).
+%
+%   Also writes, under ephys_main_folder:
+%     synchronization_report_split_sources.txt
+%     synchronization_info.mat (variable synchronization_results)
+%   Does not call MP_add_saccades_and_reaches. Run numbers come from
+%   unique(RunN.data(2:end)). Empty inputs return empty structs.
+%
 % DAG_SYNCHRONIZATION_ALL_BLOCKS_SPLIT_SOURCES_EXAMPLE
 % Example call:
 %   [results, report] = DAG_synchronization_all_blocks_split_sources_example('D:\...\ephys\Bac','D:\...\behavior\Bac');

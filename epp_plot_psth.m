@@ -1,4 +1,26 @@
 function epp_plot_psth(cfg)
+%EPP_PLOT_PSTH  Stage 3: condition-split PSTH and binned raster per unit.
+%
+%   epp_plot_psth(cfg)
+%
+%   Inputs:
+%     cfg - struct from epp_load_cfg. Reads unit_info.mat from
+%           cfg.roots.processed_trials and *_raster.mat from cfg.roots.raster.
+%           Uses cfg.CONDITIONS (name, color, parameters) and cfg.psth
+%           (bin_size_s, smoothing_kernel 'gaussian'|'box', smoothing_width_s).
+%           Condition parameters are trial-field names; a trial matches a
+%           field if its value is in the list, and all fields are ANDed.
+%           The same trial may match more than one condition.
+%
+%   Outputs:
+%     none. For each unit that has a raster file, writes
+%       cfg.roots.psth/<Neuron_ID>_psth.png
+%       cfg.roots.psth/<Neuron_ID>_psth.mat  (variable psth_data)
+%     psth_data.Neuron_ID, psth_data.windows (raster windows plus .conditions).
+%     conditions(ci): name, n_trials, bin_centers_s, mean_rate_hz, sem_rate_hz.
+%     Raster dots are one point per occupied raster bin, colored by the first
+%     matching condition (gray if none).
+%
 % Stage 3: load rasters, condition-split, and plot PSTH + rasters.
 
 load(fullfile(cfg.roots.processed_trials, 'unit_info.mat'), 'unit_info');

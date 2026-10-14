@@ -1,4 +1,26 @@
 function units = epp_sorting_table_to_units(monkey, cfg)
+%EPP_SORTING_TABLE_TO_UNITS  Read final_sorting rows into a struct array.
+%
+%   units = epp_sorting_table_to_units(monkey, cfg)
+%
+%   Inputs:
+%     monkey - char/string. Table path is
+%              <cfg.roots.sorting_tables>/<monkey>/<monkey(1:3)>_UltraSort.xls*.
+%              monkey must be at least 3 characters.
+%     cfg    - struct. cfg.datasets (numeric) keeps rows whose Dataset column
+%              is in that list. Empty cfg.datasets keeps every dataset.
+%
+%   Outputs:
+%     units - column struct array, one element per kept row. Field names are
+%             the sheet headers passed through matlab.lang.makeValidName.
+%             Numeric-looking columns become double; columns whose every value
+%             is 0/1/true/false become logical. Blocks and Perturbation are
+%             parsed from pipe text ('|2|5|') into numeric row vectors.
+%             Perturbation is expanded to one value per block (missing -> 0).
+%             Rows with Unit == 0 are dropped. Empty result is struct([]) when
+%             the workbook, sheet, or filter yields nothing (warning only if
+%             the file or sheet is missing/empty). Sheet read: final_sorting.
+%
 % epp_sorting_table_to_units
 % Convert sorting-table rows to unit struct array with dataset/unit filtering.
 

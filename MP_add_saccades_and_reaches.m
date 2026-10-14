@@ -1,4 +1,34 @@
 function trial = MP_add_saccades_and_reaches(trial, cfg)
+%MP_ADD_SACCADES_AND_REACHES  Add saccade/reach timing to MonkeyPsych trials.
+%
+%   trial = MP_add_saccades_and_reaches(trial)
+%   trial = MP_add_saccades_and_reaches(trial, cfg)
+%
+%   Inputs:
+%     trial - MonkeyPsych struct array. Per trial the detector uses
+%             .state, .tSample_from_time_start, .states, .states_onset,
+%             .type, .effector, .aborted_state, .choice, .x_eye, .y_eye,
+%             .x_hnd, .y_hnd, .eye, .hnd, .task, .target_selected,
+%             .reach_hand, .success, .sen_L, .sen_R (whichever exist).
+%             Calls MPA_get_states and overwrites global MA_STATES.
+%     cfg   - optional struct. Omitted fields take the defaults in
+%             apply_default_cfg. Mode names are in the comment below.
+%
+%   Outputs:
+%     trial - input trials with task removed, duplicate samples dropped,
+%             and these fields set (NaN when not detected):
+%             saccade_ini, saccade_end, saccade_vel, saccade_amplitude,
+%             saccade_lat, saccade_dur, saccade_startpos, saccade_endpos,
+%             saccade_tar_pos_closest, reach_onset, reach_offset, reach_lat,
+%             reach_dur, reach_endpos, reach_tar_pos_closest, demanded_hand,
+%             used_hand, tar_pos, nct_pos, fix_pos, hemifield,
+%             target_selected_idx, target_nonselected_idx, choice,
+%             col_dim, col_bri, nct_col_dim, nct_col_bri.
+%             Movement codes 60/61/62/63 are inserted into states/states_onset.
+%             Movement times in the added fields are seconds relative to
+%             state 2; states_onset for those codes is shifted back to the
+%             trial clock.
+%
 % MP_add_saccades_and_reaches
 % Standalone extraction of movement onsets/offsets from a trial struct.
 %
@@ -624,8 +654,8 @@ defaults = struct( ...
     'interpolated_SR', 1000, ...
     'downsampling', 1, ...
     'smoothing_samples', 12, ...
-    'sac_ini_t', 200, ...
-    'sac_end_t', 50, ...
+    'sac_ini_t', 200, ... % threshold for saccade onset
+    'sac_end_t', 50, ... % threshold for saccade offset
     'sac_min_dur', 0.03, ...
     'sac_min_amp', 2, ...
     'sac_max_off', 50, ...
