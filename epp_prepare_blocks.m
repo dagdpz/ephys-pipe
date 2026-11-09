@@ -5,6 +5,7 @@ function epp_prepare_blocks(cfg)
 %
 %   Inputs:
 %     cfg - struct from epp_load_cfg. Uses cfg.monkeys, cfg.datasets,
+%           cfg.movements (passed to MP_add_saccades_and_reaches),
 %           cfg.roots.sorting_tables, ephys_tanks, behavior, processed_trials.
 %
 %   Outputs:
@@ -26,6 +27,7 @@ function epp_prepare_blocks(cfg)
 %
 % Stage 1: build unit_info and save processed block payloads.
 
+epp_ensure_paths();
 unit_info = struct([]);
 report = repmat(struct('ephys_block', '', 'behavior_file', '', 'run', NaN, 'messages', ''), 0, 1);
 
@@ -69,7 +71,7 @@ for m = 1:numel(cfg.monkeys)
             end
 
             behavioral_data = load(behavior_file, 'trial');
-            processed_run.trial = MP_add_saccades_and_reaches(behavioral_data.trial);
+            processed_run.trial = MP_add_saccades_and_reaches(behavioral_data.trial, cfg.movements);
             processed_run.run = run_number;
             [sync_data, sync_report] = epp_synchronization(ephys_data, processed_run);
 

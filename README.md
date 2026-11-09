@@ -10,10 +10,10 @@ Everything the pipeline needs falls into four groups. Paths below use default ro
 
 ### 1. Settings
 
-Project and version configuration live in a **sibling** `Settings` repo (resolved relative to this repo):
+Project and version configuration live in this repo:
 
 ```
-Settings/
+settings/
   <project>/
     epp/
       epp_project_settings.m      ← monkeys, datasets, WINDOWS, CONDITIONS, …
@@ -83,7 +83,7 @@ Curated unit list; **not** generated entirely by the pipeline. Lives next to the
 
 Example: `Y:\Data\Sorting_tables\Flaffus\Fla_UltraSort.xlsx`
 
-The pipeline reads sheet **`final_sorting`** only (`epp_sorting_table_to_units`). `epp_update_sorting_table` writes **`automatic_sorting`**; you promote that to `final_sorting` by hand after review.
+The pipeline reads and writes sheet **`automatic_sorting`** only (`epp_sorting_table_to_units`, `epp_update_sorting_table`). Each update first copies the workbook to `<Mon>_UltraSort_backup_yyyymmdd_HHMMSS.xlsx` in the same folder, then replaces the live file with that one sheet.
 
 **Columns filled automatically** (from spikes + electrode depths): `Session`, `Filenumber`, `Blocks`, `Channel`, `z`, `Unit`, `N_spk`, `Neuron_ID`, `Site_ID`, …
 
@@ -133,22 +133,21 @@ This step is part of the ephys-pipe workflow but **not** called by `epp_initiati
 
 **What it does:**
 
-1. Reads existing `<Mon>_UltraSort.xlsx` (prefers `final_sorting`, else `automatic_sorting`)
+1. Copies `<Mon>_UltraSort.xlsx` to a timestamped backup, then reads sheet `automatic_sorting` only
 2. Loads `Electrode_depths_<Mon>.m`
 3. Scans UltraSort spike `.mat` files per session; assigns `Filenumber` from depth steps (>50 µm → new file), `Blocks` from electrode depths, sort codes from `cluster_class`
 4. Merges with existing manual columns (SNR, stability, **`Dataset`**, etc.) where session/site/unit match
-5. Writes sheet **`automatic_sorting`** (never overwrites `final_sorting` directly)
+5. Replaces the workbook with a single sheet, **`automatic_sorting`**
 
 **Spike source for updates:** merge-data folder on the lab server (`.../spikesorting/testdata/merge_data_structure/TDTbrain/<YYYYMMDD>/dataspikes*negthr.mat`). Align that path with your tanks or adjust `epp_update_sorting_table` if your layout differs.
 
 ### 4. Review and promote → ready to go
 
-1. Open `<Mon>_UltraSort.xlsx`, compare `automatic_sorting` to `final_sorting`
+1. Open `<Mon>_UltraSort.xlsx`, sheet `automatic_sorting`
 2. Fill or correct **manual columns**, especially **`Dataset`**, **`Hemisphere`**, and **`Perturbation`**
-3. Copy/replace the `final_sorting` sheet from `automatic_sorting` (or merge selectively)
-4. Confirm `cfg.datasets` and `cfg.monkeys` in project settings match the rows you kept
+3. Confirm `cfg.datasets` and `cfg.monkeys` in project settings match the rows you kept
 
-You are ready when `final_sorting` reflects the units you want and paths in [Expected inputs](#expected-inputs) resolve on your machine.
+You are ready when `automatic_sorting` reflects the units you want and paths in [Expected inputs](#expected-inputs) resolve on your machine. The pre-update backup is the previous workbook.
 
 ---
 
@@ -176,7 +175,7 @@ Loads `cfg` once via `epp_load_cfg`, then runs four stages:
 
 #### Stage 1 — `epp_prepare_blocks`
 
-1. Read `final_sorting` → build `unit_info`
+1. Read `automatic_sorting` → build `unit_info`
 2. For each relevant `(session, block)` from unit rows:
    - Load TDT ephys block
    - For each run in `epocs.RunN`: load matching behavior `.mat`, enrich trials (`MP_add_saccades_and_reaches`), synchronize (`epp_synchronization`), concatenate runs
@@ -257,8 +256,8 @@ Written under `cfg.roots.project_version` (default `Y:\Projects\<project>\<versi
 | Step | File | Required |
 |------|------|----------|
 | 1 | `ephys-pipe/epp_general_settings.m` | yes |
-| 2 | `../Settings/<project>/epp/epp_project_settings.m` | warned if missing |
-| 3 | `../Settings/<project>/epp/epp_<version>_settings.m` | warned if missing |
+| 2 | `settings/<project>/epp/epp_project_settings.m` | warned if missing |
+| 3 | `settings/<project>/epp/epp_<version>_settings.m` | warned if missing |
 
 Each script is `run()` in the MATLAB workspace and assigns fields to `cfg` (override only what you need). `epp_load_cfg` creates any missing output root folders.
 
@@ -266,7 +265,7 @@ Each script is `run()` in the MATLAB workspace and assigns fields to `cfg` (over
 
 | Field | Default role |
 |-------|----------------|
-| `settings` | `../Settings/<project>/epp/` |
+| `settings` | `settings/<project>/epp/` |
 | `sorting_tables` | UltraSort Excel + electrode-depth scripts |
 | `ephys_tanks` | TDT tanks + spike `.mat` files |
 | `behavior` | MonkeyPsych `.mat` files |
@@ -348,4 +347,4 @@ So conditions are flexible: you define arbitrary trial-field combinations, and e
 | `epp_plot_population_psth` | Stage 4: population PSTH across units |
 | `epp_synchronization` | Align one behavioral run to one ephys block |
 | `MP_add_saccades_and_reaches` | Enrich trials with movement timing and targets |
-| `epp_sorting_table_to_units` | Parse `final_sorting` into unit structs |
+| `epp_sorting_table_to_units` | Parse `automatic_sorting` into unit structs |

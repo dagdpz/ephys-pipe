@@ -11,7 +11,8 @@ function trial = MP_add_saccades_and_reaches(trial, cfg)
 %             .x_hnd, .y_hnd, .eye, .hnd, .task, .target_selected,
 %             .reach_hand, .success, .sen_L, .sen_R (whichever exist).
 %             Calls MPA_get_states and overwrites global MA_STATES.
-%     cfg   - optional struct. Omitted fields take the defaults in
+%     cfg   - optional struct. The pipeline passes cfg.movements from
+%             epp_general_settings. Omitted fields take the defaults in
 %             apply_default_cfg. Mode names are in the comment below.
 %
 %   Outputs:
@@ -448,7 +449,10 @@ for e = 1:2
                 pos_e(k) = T.(eff).tar(k).pos(1) + 1i*T.(eff).tar(k).pos(2);
             end
         end
-        all_targets{e} = unique(pos_e);
+        % 'stable': drop repeated XY, keep first-seen tar order.
+        % Default unique sorts complex values (magnitude, then phase) and
+        % swaps left/right on equal-eccentricity choice targets.
+        all_targets{e} = unique(pos_e, 'stable');
     end
     if n_targets(e) >= 1 && isfield(T, 'target_selected') && numel(T.target_selected) >= e && ~isnan(T.target_selected(e))
         candidate = round(T.target_selected(e));
@@ -650,6 +654,9 @@ end
 end
 
 function cfg = apply_default_cfg(cfg)
+% Fill only fields the caller left missing or empty.
+% Pipeline values come from cfg.movements in epp_general_settings; keep the
+% numbers below identical to that block.
 defaults = struct( ...
     'interpolated_SR', 1000, ...
     'downsampling', 1, ...

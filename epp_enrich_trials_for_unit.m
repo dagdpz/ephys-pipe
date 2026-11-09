@@ -8,8 +8,8 @@ function trials = epp_enrich_trials_for_unit(trials, unit_row)
 %                input is returned unchanged. Perturbation and block are not
 %                set here.
 %     unit_row - one unit struct. Required fields: Neuron_ID, Hemisphere.
-%                Hemisphere must end in L/l (+1) or R/r (-1). Anything else
-%                errors.
+%                Hemisphere must start with L/l (+1) or R/r (-1), so L, l,
+%                left, R, r, and right all work. Anything else errors.
 %
 %   Outputs:
 %     trials - same array. These fields, when present, have the real part
@@ -21,7 +21,7 @@ function trials = epp_enrich_trials_for_unit(trials, unit_row)
 %
 % Flip lateral trial variables by recorded hemisphere (epp_build_rasters).
 %
-% Reads unit_row.Hemisphere from final_sorting. Perturbation and block are
+% Reads unit_row.Hemisphere from automatic_sorting. Perturbation and block are
 % set earlier during block alignment in load_unit_combined.
 
 if isempty(trials)
@@ -71,16 +71,16 @@ end
 end
 
 function rec_hemi_sign = parse_recorded_hemisphere(hemisphere_value)
-% L/l -> +1, R/r -> -1 (multiplier for lateral flip).
+% First letter: L/l/left -> +1, R/r/right -> -1.
 rec_hemi_sign = NaN;
 if isempty(hemisphere_value)
     return;
 end
 hemisphere_text = lower(hemisphere_value);
-last_char = hemisphere_text(end);
-if last_char == 'l'
+first_char = hemisphere_text(1);
+if first_char == 'l'
     rec_hemi_sign = 1;
-elseif last_char == 'r'
+elseif first_char == 'r'
     rec_hemi_sign = -1;
 end
 end

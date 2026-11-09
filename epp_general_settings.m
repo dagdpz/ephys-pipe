@@ -4,7 +4,7 @@ function cfg = epp_general_settings(project, cfg)
 %   cfg = epp_general_settings(project, cfg)
 %
 %   Inputs:
-%     project - char/string. Project folder name under ../Settings/.
+%     project - char/string. Project folder name under settings/<project>/epp/.
 %     cfg     - struct, optional. Must already contain cfg.project_version
 %               (set by epp_load_cfg). Missing cfg starts from struct().
 %
@@ -13,7 +13,8 @@ function cfg = epp_general_settings(project, cfg)
 %           ephys_tanks, behavior, project_version, processed_trials, raster,
 %           psth, population_psth, statistics), cfg.monkeys, cfg.datasets,
 %           cfg.raster_bin_size_s, cfg.WINDOWS, cfg.EPOCHS (cell table),
-%           cfg.CONDITIONS, cfg.psth, and cfg.statistics filled in.
+%           cfg.CONDITIONS, cfg.psth, cfg.movements, cfg.min_edge_rate_hz,
+%           and cfg.statistics filled in.
 %           Existing fields are overwritten. Project/version scripts may
 %           override them afterward.
 %
@@ -29,11 +30,9 @@ if nargin < 1 || isempty(project)
     error('Provide project name.');
 end
 
-% Path roots.
-settings_root = fileparts(mfilename('fullpath'));
-fileseps = strfind(settings_root, filesep);
-settings_root = [settings_root(1:fileseps(end)) 'Settings'];
-cfg.roots.settings = [settings_root filesep project filesep 'epp' filesep];
+% Path roots. Project settings live in this repo under settings/<project>/epp/.
+repo_root = fileparts(mfilename('fullpath'));
+cfg.roots.settings = [fullfile(repo_root, 'settings', project, 'epp') filesep];
 cfg.roots.sorting_tables = 'Y:\Data\Sorting_tables';
 cfg.roots.ephys_tanks = 'Y:\Data\TDTtanks';
 cfg.roots.behavior = 'Y:\Data';
@@ -48,6 +47,10 @@ cfg.roots.statistics = fullfile(cfg.roots.project_version, 'statistics');
 % Default pipeline behavior (project/version settings may override).
 cfg.monkeys = {};
 cfg.datasets = [];
+
+% Drop leading and trailing trials below this rate (spikes/s). 0 disables.
+% Rate is that unit's spikes from one trial timestamp to the next.
+cfg.min_edge_rate_hz = 0;
 
 % Default raster settings used by epp_initiation.
 cfg.raster_bin_size_s = 0.001;
@@ -80,6 +83,26 @@ cfg.CONDITIONS = struct( ...
     'color', {[200 55 12], [100 55 22]}, ...
     'parameters', num2cell(struct('choice', {0, 0}, 'hemifield', {-1, 1})));
 
+
+% Saccade/reach detection. Passed to MP_add_saccades_and_reaches as cfg.movements.
+% saccade_definition: 'closest_big_enough' (default), 'biggest_close_enough',
+%   'last_in_state', 'first_in_state', 'first_big_enough',
+%   'first_end_in_target', 'first_start_in_target'
+% reach_definition: 'first_touch_in_target' (default), 'first_touch',
+%   'state_change_position'
+cfg.movements.interpolated_SR = 1000;
+cfg.movements.downsampling = 1;
+cfg.movements.smoothing_samples = 12;
+cfg.movements.sac_ini_t = 200;       % saccade onset velocity threshold
+cfg.movements.sac_end_t = 50;        % saccade offset velocity threshold
+cfg.movements.sac_min_dur = 0.03;
+cfg.movements.sac_min_amp = 2;
+cfg.movements.sac_max_off = 50;
+cfg.movements.nsacc_max = 20;
+cfg.movements.saccade_definition = 'closest_big_enough';
+cfg.movements.reach_definition = 'first_touch_in_target';
+cfg.movements.correct_offset = 1;
+cfg.movements.enable_cleaning = 1;
 
 % Default PSTH plotting settings.
 cfg.psth.bin_size_s = 0.01;

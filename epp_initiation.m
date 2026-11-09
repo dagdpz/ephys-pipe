@@ -4,7 +4,7 @@ function epp_initiation(project, version)
 %   epp_initiation(project, version)
 %
 %   Inputs:
-%     project - char/string. Settings folder name under ../Settings/<project>/epp/.
+%     project - char/string. Settings folder name under settings/<project>/epp/.
 %     version - char/string. Selects epp_<version>_settings.m and the output
 %               folder Y:\Projects\<project>\<version>\.
 %

@@ -4,7 +4,7 @@ function cfg = epp_load_cfg(project, version)
 %   cfg = epp_load_cfg(project, version)
 %
 %   Inputs:
-%     project - char/string. Loads ../Settings/<project>/epp/epp_project_settings.m
+%     project - char/string. Loads settings/<project>/epp/epp_project_settings.m
 %               when that file exists (warning if missing).
 %     version - char/string. Stored as cfg.project_version and used to load
 %               epp_<version>_settings.m from the same folder (warning if missing).
@@ -17,6 +17,8 @@ function cfg = epp_load_cfg(project, version)
 %           merged from cfg.statistics.within_epoch and .across_epochs.
 %           Every non-empty cfg.roots.* folder is created if it does not exist,
 %           including input roots.
+
+epp_ensure_paths();
 
 if nargin < 1 || isempty(project)
     error('Provide project name.');

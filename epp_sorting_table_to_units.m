@@ -1,5 +1,5 @@
 function units = epp_sorting_table_to_units(monkey, cfg)
-%EPP_SORTING_TABLE_TO_UNITS  Read final_sorting rows into a struct array.
+%EPP_SORTING_TABLE_TO_UNITS  Read automatic_sorting rows into a struct array.
 %
 %   units = epp_sorting_table_to_units(monkey, cfg)
 %
@@ -19,14 +19,14 @@ function units = epp_sorting_table_to_units(monkey, cfg)
 %             Perturbation is expanded to one value per block (missing -> 0).
 %             Rows with Unit == 0 are dropped. Empty result is struct([]) when
 %             the workbook, sheet, or filter yields nothing (warning only if
-%             the file or sheet is missing/empty). Sheet read: final_sorting.
+%             the file or sheet is missing/empty). Sheet read: automatic_sorting.
 %
 % epp_sorting_table_to_units
 % Convert sorting-table rows to unit struct array with dataset/unit filtering.
 
 units = struct([]);
 filename = [monkey(1:3) '_UltraSort'];
-sheetname = 'final_sorting';
+sheetname = 'automatic_sorting';
 foldername = fullfile(cfg.roots.sorting_tables, monkey);
 
 xlsx_matches = dir(fullfile(foldername, [filename '.xls*']));

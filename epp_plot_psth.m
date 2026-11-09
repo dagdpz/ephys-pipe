@@ -44,7 +44,7 @@ for u = 1:numel(unit_info)
 
     n_windows = numel(raster_data.windows);
     if n_windows == 0, continue; end
-    fig = figure('Color', 'w');
+    fig = figure('Color', 'w','Units','normalized','Position',[0 0 1 1]);
     for wi = 1:n_windows
         w = raster_data.windows(wi);
         n_events = size(w.raster, 1);
@@ -79,6 +79,28 @@ for u = 1:numel(unit_info)
         hold(ax_raster, 'on');
         ax = subplot(n_windows, 2, (wi-1)*2 + 2);
         hold(ax, 'on');
+
+        % No align events: do not read trial fields. Empty rates are skipped
+        % by the population mean (isempty(mean_rate_hz)).
+        if n_events == 0 || isempty(w.trial)
+            for ci = 1:numel(cfg.CONDITIONS)
+                conditions_out(ci).name = cfg.CONDITIONS(ci).name;
+                conditions_out(ci).n_trials = 0;
+                conditions_out(ci).bin_centers_s = psth_centers;
+                conditions_out(ci).mean_rate_hz = [];
+                conditions_out(ci).sem_rate_hz = [];
+            end
+            xlabel(ax, 'Time (s)');
+            ylabel(ax, 'Rate (Hz)');
+            title(ax, sprintf('%s (%d)', w.name, w.align_state));
+            xlabel(ax_raster, 'Time (s)');
+            ylabel(ax_raster, 'Trials');
+            title(ax_raster, sprintf('%s raster', w.name));
+            xlim(ax_raster, [w.t_start_s w.t_end_s]);
+            psth_data.windows(wi).conditions = conditions_out;
+            continue;
+        end
+
         for ci = 1:numel(cfg.CONDITIONS)
             cond_def = cfg.CONDITIONS(ci);
             keep_mask = true(n_events, 1);

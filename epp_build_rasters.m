@@ -6,8 +6,10 @@ function epp_build_rasters(cfg)
 %   Inputs:
 %     cfg - struct from epp_load_cfg. Reads unit_info.mat and *_Block-*.mat from
 %           cfg.roots.processed_trials. Uses cfg.WINDOWS, cfg.EPOCHS,
-%           cfg.CONDITIONS, cfg.raster_bin_size_s, cfg.statistics.comparisons,
-%           cfg.roots.ephys_tanks, raster, statistics.
+%           cfg.CONDITIONS, cfg.raster_bin_size_s, cfg.min_edge_rate_hz,
+%           cfg.statistics.comparisons, cfg.roots.ephys_tanks, raster, statistics.
+%           min_edge_rate_hz > 0 drops leading and trailing trials whose
+%           mean rate (spikes/s over the trial span) is below that value.
 %
 %   Outputs:
 %     none. Per unit, writes cfg.roots.raster/<Neuron_ID>_raster.mat
@@ -24,7 +26,8 @@ function epp_build_rasters(cfg)
 %   Spike file (UltraSort): dataspikes_rb<FFF>_ch<CCC>_negthr.mat with
 %   cluster_class (sort code, time in ms) and par.segmentends / par.sr.
 %   Block i of the unit is time-shifted by segment start i. Trials are then
-%   passed through epp_enrich_trials_for_unit.
+%   passed through epp_enrich_trials_for_unit, then edge trials below
+%   cfg.min_edge_rate_hz are removed.
 %
 % Stage 2: per-unit aligned data, event-aligned rasters, and epoch statistics.
 %
@@ -105,6 +108,109 @@ for bi = 1:numel(blocks)
 end
 
 unit_combined.trial = epp_enrich_trials_for_unit(unit_combined.trial, unit_row);
+min_edge_rate_hz = 0;
+if isfield(cfg, 'min_edge_rate_hz')
+    min_edge_rate_hz = cfg.min_edge_rate_hz;
+end
+unit_combined = trim_low_rate_edge_trials(unit_combined, min_edge_rate_hz);
+end
+
+function unit_combined = trim_low_rate_edge_trials(unit_combined, min_rate_hz)
+% Drop leading and trailing trials below min_rate_hz (spikes/s).
+% A trial spans [timestamp, next trial timestamp). The last trial ends at
+% the last finite state or sample time. Trials in the middle are kept.
+% min_rate_hz <= 0 does nothing. State and sample rows outside the kept
+% span are removed. Spike times stay, so a kept trial can still see spikes
+% in its pre-event window.
+
+if isempty(min_rate_hz) || ~isscalar(min_rate_hz) || ~isfinite(min_rate_hz) || min_rate_hz <= 0
+    return
+end
+if isempty(unit_combined.trial)
+    return
+end
+
+[trial_starts, trial_ends] = unit_trial_bounds(unit_combined);
+rates = trial_span_rates(unit_combined.spike_times, trial_starts, trial_ends);
+below = ~isfinite(rates) | rates < min_rate_hz;
+first_keep = find(~below, 1, 'first');
+if isempty(first_keep)
+    unit_combined.trial = unit_combined.trial([]);
+    unit_combined = crop_state_and_sample(unit_combined, inf, -inf);
+    return
+end
+last_keep = find(~below, 1, 'last');
+if first_keep == 1 && last_keep == numel(below)
+    return
+end
+
+if first_keep == 1
+    t0 = -inf;
+else
+    t0 = trial_starts(first_keep);
+end
+if last_keep == numel(below)
+    t1 = inf;
+else
+    t1 = trial_starts(last_keep + 1);
+end
+unit_combined.trial = unit_combined.trial(first_keep:last_keep);
+unit_combined = crop_state_and_sample(unit_combined, t0, t1);
+end
+
+function [trial_starts, trial_ends] = unit_trial_bounds(unit_combined)
+trial_starts = [unit_combined.trial.timestamp].';
+n_trials = numel(trial_starts);
+data_end = last_data_time(unit_combined);
+if n_trials > 1
+    trial_ends = [trial_starts(2:end); data_end];
+else
+    trial_ends = data_end;
+end
+end
+
+function t_end = last_data_time(unit_combined)
+candidates = [unit_combined.state.timestamps(:); unit_combined.sample.timestamps(:)];
+candidates = candidates(isfinite(candidates));
+if isempty(candidates)
+    t_end = NaN;
+else
+    t_end = max(candidates);
+end
+end
+
+function rates = trial_span_rates(spike_times, trial_starts, trial_ends)
+n_trials = numel(trial_starts);
+duration = trial_ends(:) - trial_starts(:);
+rates = NaN(n_trials, 1);
+edges = [trial_starts(:); trial_ends(end)];
+monotonic = numel(edges) == n_trials + 1 && all(isfinite(edges)) && all(diff(edges) > 0);
+spikes = spike_times(isfinite(spike_times));
+if monotonic
+    rates = histcounts(spikes, edges).' ./ duration;
+    return
+end
+for i = 1:n_trials
+    if ~isfinite(duration(i)) || duration(i) <= 0
+        continue
+    end
+    rates(i) = sum(spikes >= trial_starts(i) & spikes < trial_ends(i)) / duration(i);
+end
+end
+
+function unit_combined = crop_state_and_sample(unit_combined, t0, t1)
+keep = unit_combined.state.timestamps >= t0 & unit_combined.state.timestamps < t1;
+unit_combined.state.Value = unit_combined.state.Value(keep);
+unit_combined.state.timestamps = unit_combined.state.timestamps(keep);
+
+sample_keep = unit_combined.sample.timestamps >= t0 & unit_combined.sample.timestamps < t1;
+sample_fields = {'x_hnd', 'y_hnd', 'x_eye', 'y_eye', 'timestamps'};
+for i = 1:numel(sample_fields)
+    fn = sample_fields{i};
+    if numel(unit_combined.sample.(fn)) == numel(sample_keep)
+        unit_combined.sample.(fn) = unit_combined.sample.(fn)(sample_keep);
+    end
+end
 end
 
 function save_unit_rasters(unit_combined, neuron_id, cfg)

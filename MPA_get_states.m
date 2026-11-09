@@ -38,6 +38,7 @@ MA_STATES.SAC_INI       = 60;
 MA_STATES.SAC_END       = 61;
 MA_STATES.REA_INI       = 62;
 MA_STATES.REA_END       = 63;
+MA_STATES.SEN_REL       = 64;
 % MA_STATES.MOV_INI       = 66;
 % MA_STATES.MOV_END       = 67;
 % MA_STATES.MO2_INI       = 68;

@@ -6,7 +6,7 @@ function epp_plot_population_psth(cfg)
 %   Inputs:
 %     cfg - struct from epp_load_cfg. Reads *_psth.mat from cfg.roots.psth
 %           (skips a file named population_psth.mat). Uses cfg.CONDITIONS
-%           for names and colors. Requires shadedErrorBar on the path.
+%           for names and colors. shadedErrorBar is loaded from external/.
 %
 %   Outputs:
 %     none. Writes cfg.roots.population_psth/population_psth.png and
@@ -19,6 +19,7 @@ function epp_plot_population_psth(cfg)
 %
 % Stage 4: aggregate per-unit PSTHs into population mean +/- SEM plots.
 
+epp_ensure_paths();
 unit_psths = load_unit_psth_data(cfg.roots.psth);
 if isempty(unit_psths)
     warning('epp_plot_population_psth:NoData', 'No unit PSTH files found in %s.', cfg.roots.psth);

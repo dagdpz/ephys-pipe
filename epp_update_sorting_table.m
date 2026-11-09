@@ -15,27 +15,24 @@ function epp_update_sorting_table(monkey,dates)
 %     <drive>Data\Sorting_tables\<monkey>\Electrode_depths_<monkey(1:3)>.m
 %         script that must assign Session, block, channels, z.
 %     <drive>Data\Sorting_tables\<monkey>\<monkey(1:3)>_UltraSort.xlsx
-%         sheet final_sorting if present, else automatic_sorting, else a
-%         header-only table.
+%         sheet automatic_sorting only. Missing file starts from a header row.
+%         Missing sheet is an error (a backup is still written).
 %
 %   Outputs:
-%     none. Writes sheet automatic_sorting in that workbook. Does not modify
-%     final_sorting. Columns filled here: Monkey, Session, Filenumber, Blocks,
-%     Channel, z, Unit, N_spk, Neuron_ID, Site_ID. Other columns are copied
-%     from the previous sheet when session/channel/file/unit match.
+%     none. Before writing, copies the workbook to
+%     <Mon>_UltraSort_backup_yyyymmdd_HHMMSS.xlsx in the same folder.
+%     Then replaces the workbook with a single sheet, automatic_sorting.
+%     Columns filled here: Monkey, Session, Filenumber, Blocks, Channel, z,
+%     Unit, N_spk, Neuron_ID, Site_ID. Other columns are copied from the
+%     previous automatic_sorting sheet when session/channel/file/unit match.
 %     Blocks are pipe text ('|2|5|'). Unit 0 marks a channel with no sort codes.
 %
 % INPUT: epp_update_sorting_table('Flaffus',[20160608,20160609])
-% automatically updates '<monkey>_UltraSort.xlsx' in the sorting table path
-% note that this function takes information from the "final_sorting" sheet,
-% and overrides "automatic_sorting" sheet, using:
-% "final_sorting" as basis and overriding with information accessable from
-% Electrode_depths.m as well as sortcodes from the corresponding PLX file.
-% Therefore, manually added informations (such as SNR, stability, and single ranking as well as grid hole positions) are kept
-% Before the automatic information can be processed further, the user is
-% asked to copy the "automatic sorting" sheet to "final sorting", to make
-% sure no valuable information is lost in the automatic process
+% Rebuilds automatic_sorting from Electrode_depths and spike sort codes.
+% Manual columns (SNR, stability, Dataset, Hemisphere, Perturbation, ...)
+% are kept when the previous automatic_sorting row matches.
 
+epp_ensure_paths();
 max_depth_delta_for_same_file = 50;
 dag_drive=DAG_get_server_IP;
 threshold_used='negthr'; % to be changed to 'both'
@@ -55,13 +52,19 @@ end
 % DBpath=DAG_get_Dropbox_path;
 % DBfolder=[DBpath filesep 'DAG' filesep 'phys' filesep monkey '_dpz' filesep];
 DBfolder=[dag_drive 'Data' filesep 'Sorting_tables' filesep monkey filesep];
-[~, sheets_available]=xlsfinfo([DBfolder  monkey(1:3) '_UltraSort.xlsx']);
-if ismember('final_sorting',sheets_available)
-    [~, ~, sorting_table]=xlsread([DBfolder  monkey(1:3) '_UltraSort.xlsx'],'final_sorting');
-elseif ismember('automatic_sorting',sheets_available)
-    [~, ~, sorting_table]=xlsread([DBfolder  monkey(1:3) '_UltraSort.xlsx'],'automatic_sorting');
+xlsx_path = [DBfolder monkey(1:3) '_UltraSort.xlsx'];
+sheetname = 'automatic_sorting';
+if isfile(xlsx_path)
+    backup_sorting_workbook(xlsx_path);
+    [~, sheets_available] = xlsfinfo(xlsx_path);
+    if ~ismember(sheetname, sheets_available)
+        error('epp_update_sorting_table:MissingSheet', ...
+            '%s has no %s sheet. A backup was written next to the workbook. Copy your table onto a sheet named %s and rerun.', ...
+            xlsx_path, sheetname, sheetname);
+    end
+    [~, ~, sorting_table] = xlsread(xlsx_path, sheetname);
 else
-    sorting_table={'Monkey','Session','Filenumber','Blocks','Channel','z','Unit','N_spk','Neuron_ID','Site_ID'};
+    sorting_table = empty_sorting_header();
 end
 old_table=sorting_table;
 dateindex_old=DAG_find_column_index(old_table,'Session');
@@ -150,6 +153,8 @@ for s =1:numel(subfolders)
                 sorting_table{n_row,idx.Site_ID}=sitename;
             end
         else
+            % Empty channel is its own site row. Unit 0, Neuron_ID *_000.
+            n_row=n_row+1;
             sorting_table{n_row,idx.z}=z;
             sorting_table{n_row,idx.Monkey}=monkey;
             sorting_table{n_row,idx.Session}=session;
@@ -211,13 +216,78 @@ for s=1:numel(sessions)
             sorting_table(rows_new,:)];
     end
 end
-% %% add empty rows at the end to overwrite excess rows in case of shorting a session
-old_table_rows=size(old_table,1);
-if old_table_rows>size(complete_table,1)
-    complete_table=[complete_table; cell(old_table_rows-size(complete_table,1),size(complete_table,2))];
-end
 %[complete_mastertable]=DAG_update_cell_table(sorting_table,old_table,'Session');
-xlswrite([DBfolder filesep monkey(1:3) '_UltraSort.xlsx'],complete_table,'automatic_sorting');
+write_automatic_sorting_workbook(xlsx_path, complete_table);
+end
+
+function sorting_table = empty_sorting_header()
+sorting_table = {'Monkey','Session','Filenumber','Blocks','Channel','z','Unit','N_spk','Neuron_ID','Site_ID'};
+end
+
+function backup_sorting_workbook(xlsx_path)
+% Full copy of the workbook before automatic_sorting is replaced.
+[folder, name, ext] = fileparts(xlsx_path);
+stamp = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
+backup_path = fullfile(folder, sprintf('%s_backup_%s%s', name, stamp, ext));
+suffix = 1;
+while isfile(backup_path)
+    suffix = suffix + 1;
+    backup_path = fullfile(folder, sprintf('%s_backup_%s_%d%s', name, stamp, suffix, ext));
+end
+copyfile(xlsx_path, backup_path);
+end
+
+function write_automatic_sorting_workbook(xlsx_path, complete_table)
+% Write a new workbook whose only sheet is automatic_sorting, then replace
+% the live file. The pre-update backup is already on disk.
+[folder, name, ext] = fileparts(xlsx_path);
+temp_path = fullfile(folder, [name '_writing' ext]);
+if isfile(temp_path)
+    delete(temp_path);
+end
+xlswrite(temp_path, complete_table, 'automatic_sorting');
+keep_only_sheet(temp_path, 'automatic_sorting');
+if isfile(xlsx_path)
+    delete(xlsx_path);
+end
+movefile(temp_path, xlsx_path);
+end
+
+function keep_only_sheet(xlsx_path, sheet_name)
+% xlswrite on a new file leaves the default Sheet1..Sheet3 behind.
+excel = actxserver('Excel.Application');
+excel.DisplayAlerts = false;
+excel.Visible = false;
+wb = excel.Workbooks.Open(xlsx_path);
+cleanup_obj = onCleanup(@() release_excel(excel, wb)); %#ok<NASGU>
+sheets = wb.Sheets;
+has_target = false;
+for i = 1:sheets.Count
+    if strcmp(sheets.Item(i).Name, sheet_name)
+        has_target = true;
+        break;
+    end
+end
+if ~has_target
+    sheets.Item(1).Name = sheet_name;
+end
+for i = sheets.Count:-1:1
+    if ~strcmp(sheets.Item(i).Name, sheet_name)
+        sheets.Item(i).Delete;
+    end
+end
+wb.Save;
+end
+
+function release_excel(excel, wb)
+try
+    if ~isempty(wb)
+        wb.Close(false);
+    end
+catch
+end
+excel.Quit;
+delete(excel);
 end
 
 function [channel_depths, channel_blocks] = get_channel_depths_and_blocks(electrode_depths_session, channel)
