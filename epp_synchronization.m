@@ -1,26 +1,26 @@
-function [sync_data, report]=epp_synchronization(ephys_data,behavioral_data,debug_on)
+function [sync_data, report]=epp_synchronization(ephys_data,processed_trials,run,debug_on)
 %EPP_SYNCHRONIZATION  Map one behavioral run onto one TDT block clock.
 %
-%   [sync_data, report] = epp_synchronization(ephys_data, behavioral_data)
-%   [sync_data, report] = epp_synchronization(ephys_data, behavioral_data, debug_on)
+%   [sync_data, report] = epp_synchronization(ephys_data, processed_trials, run)
+%   [sync_data, report] = epp_synchronization(ephys_data, processed_trials, run, debug_on)
 %
 %   Inputs:
-%     ephys_data      - struct from TDTbin2mat_working. Requires epocs.Tnum
-%                       (.data, .onset), epocs.RunN.data, epocs.SVal
-%                       (.data, .onset). debug_on also reads epocs.Sess.data.
-%     behavioral_data - .trial (struct array) and .run (run number to keep).
-%                       The loop indexes trial by trial.n, so trial(k).n must
-%                       equal k. Each trial needs .state, .tSample_from_time_start
-%                       (column), .states, .states_onset, and a sample with
-%                       state == 2.
-%     debug_on        - optional logical, default true. Applies the legacy
-%                       Tnum/RunN/Sess cleanup heuristics before alignment.
+%     ephys_data       - struct from TDTbin2mat_working. Requires epocs.Tnum
+%                        (.data, .onset), epocs.RunN.data, epocs.SVal
+%                        (.data, .onset). debug_on also reads epocs.Sess.data.
+%     processed_trials - trial struct array for this run. The loop indexes
+%                        trial by trial.n, so trial(k).n must equal k. Each
+%                        trial needs .state, .tSample_from_time_start (column),
+%                        .states, .states_onset, and a sample with state == 2.
+%     run              - run number to keep in epocs.RunN.
+%     debug_on         - optional logical, default true. Applies the legacy
+%                        Tnum/RunN/Sess cleanup heuristics before alignment.
 %
 %   Outputs:
 %     sync_data - struct:
 %         .continuous_timestamps             - sample times in ephys block seconds
 %         .Trial_timestamps                  - ephys time of state 2 per kept trial
-%         .retained_trial_numbers            - ephys Tnum values kept
+%         .retained_trial_numbers            - ephys Tnum values that also exist in this behavior run
 %         .retained_behavior_trial_numbers   - behavior trial numbers iterated
 %         .state_onsets, .state_timestamps   - behavior state times in ephys time
 %                                              (the two fields are the same)
@@ -33,17 +33,16 @@ function [sync_data, report]=epp_synchronization(ephys_data,behavioral_data,debu
 %   relative to the start of a given TDT ephys block.
 %
 %   Stream mapping used in this function:
-%   - Behavioral stream: behavioral_data.trial(t).state and
-%     behavioral_data.trial(t).tSample_from_time_start
+%   - Behavioral stream: processed_trials(t).state and
+%     processed_trials(t).tSample_from_time_start
 %   - Ephys trial/run stream: ephys_data.epocs.Tnum and ephys_data.epocs.RunN
 %   - Ephys state stream: ephys_data.epocs.SVal
 
 % INPUTS:
-% behavioral_data - struct containing:
-%                   behavioral_data.trial (trial structure array)
-%                   behavioral_data.run   (run number)
-% ephys_data      - struct created by reading a TDT block (TDTbin2mat or
-%                   TDTbin2mat_working)
+% ephys_data       - struct created by reading a TDT block (TDTbin2mat or
+%                    TDTbin2mat_working)
+% processed_trials - trial struct array for this run
+% run              - run number
 
 % OUTPUTS:
 % sync_data             - struct with synchronization outputs:
@@ -56,7 +55,7 @@ function [sync_data, report]=epp_synchronization(ephys_data,behavioral_data,debu
 %                         .state_values
 % report                - string array with all displayed messages in order
 
-if nargin < 3 || isempty(debug_on)
+if nargin < 4 || isempty(debug_on)
     debug_on = true;
 end
 
@@ -75,11 +74,11 @@ report = '';
 
 % Early input sanity checks: behavioral/ephys trial and block identifiers
 % must be available and non-empty.
-if ~isfield(behavioral_data,'trial') || isempty(behavioral_data.trial)
+if isempty(processed_trials)
     log_message('Behavioral trial data is missing or empty.');
     return
 end
-if ~isfield(behavioral_data,'run') || isempty(behavioral_data.run)
+if isempty(run)
     log_message('Behavioral run/block identifier is missing or empty.');
     return
 end
@@ -99,9 +98,9 @@ if ~isfield(ephys_data,'epocs') || ~isfield(ephys_data.epocs,'SVal') || ...
 end
 
 % Extract behavioral and ephys metadata used for alignment
-behavior_trials = behavioral_data.trial;
+behavior_trials = processed_trials;
 behavior_trial_numbers = [behavior_trials.n];
-behavior_run_number = behavioral_data.run;
+behavior_run_number = run;
 ephys_trial_numbers = ephys_data.epocs.Tnum.data;
 ephys_run_numbers = ephys_data.epocs.RunN.data;
 ephys_trial_onsets = [ephys_data.epocs.Tnum.onset];
@@ -161,13 +160,20 @@ if debug_on
         log_message(['Retained TDT trials corresponding to the requested behavioral run: ' mat2str(find(matching_trials))]);
     end
     
-    % Keep only behavioral trials that are in the ephys data as well - rare case
-    % of a last behavioral trial was initiated, but not streamed to ephys
-    if numel(behavior_trial_numbers)>numel(ephys_trial_numbers)
-        overlapping_trials=arrayfun(@(x) any(ephys_trial_numbers==x),behavior_trial_numbers);
-        behavior_trial_numbers = behavior_trial_numbers(overlapping_trials);
-        log_message(['Too many behavioral trials: ' mat2str(numel(overlapping_trials) - sum(overlapping_trials)) ' behavioral trial(s) removed']);
+    % After the RunN cut, keep only trial numbers present on both sides.
+    % Extra ephys Tnums for this run never enter retained_trial_numbers.
+    ephys_in_behavior = ismember(ephys_trial_numbers, behavior_trial_numbers);
+    if ~all(ephys_in_behavior)
+        log_message(['Ephys trials with no matching behavior trial removed: ' mat2str(ephys_trial_numbers(~ephys_in_behavior))]);
     end
+    ephys_trial_numbers = ephys_trial_numbers(ephys_in_behavior);
+    ephys_trial_onsets = ephys_trial_onsets(ephys_in_behavior);
+
+    behavior_in_ephys = ismember(behavior_trial_numbers, ephys_trial_numbers);
+    if ~all(behavior_in_ephys)
+        log_message(['Behavior trials with no matching ephys trial removed: ' mat2str(behavior_trial_numbers(~behavior_in_ephys))]);
+    end
+    behavior_trial_numbers = behavior_trial_numbers(behavior_in_ephys);
     
 end
 

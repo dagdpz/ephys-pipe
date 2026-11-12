@@ -1,5 +1,5 @@
 function epp_plot_population_psth(cfg)
-%EPP_PLOT_POPULATION_PSTH  Stage 4: mean PSTH across units.
+%EPP_PLOT_POPULATION_PSTH  Stage 5: mean PSTH across units.
 %
 %   epp_plot_population_psth(cfg)
 %
@@ -17,7 +17,7 @@ function epp_plot_population_psth(cfg)
 %     Mean and SEM are across units, not across trials. Window layout is
 %     taken from the first loaded unit.
 %
-% Stage 4: aggregate per-unit PSTHs into population mean +/- SEM plots.
+% Stage 5: aggregate per-unit PSTHs into population mean +/- SEM plots.
 
 epp_ensure_paths();
 unit_psths = load_unit_psth_data(cfg.roots.psth);

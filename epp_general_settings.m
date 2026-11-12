@@ -4,15 +4,17 @@ function cfg = epp_general_settings(project, cfg)
 %   cfg = epp_general_settings(project, cfg)
 %
 %   Inputs:
-%     project - char/string. Project folder name under settings/<project>/epp/.
+%     project - char/string. Project folder name under settings/<project>/.
 %     cfg     - struct, optional. Must already contain cfg.project_version
 %               (set by epp_load_cfg). Missing cfg starts from struct().
 %
 %   Outputs:
 %     cfg - same struct with cfg.roots.* (settings, sorting_tables,
 %           ephys_tanks, behavior, project_version, processed_trials, raster,
-%           psth, population_psth, statistics), cfg.monkeys, cfg.datasets,
-%           cfg.raster_bin_size_s, cfg.WINDOWS, cfg.EPOCHS (cell table),
+%           psth, population_psth, statistics), cfg.sorting_sheet,
+%           cfg.spike_threshold, cfg.unit_info_file, cfg.monkeys, cfg.datasets,
+%           cfg.raster_bin_size_s, cfg.raster_smooth_samples,
+%           cfg.WINDOWS, cfg.EPOCHS (cell table),
 %           cfg.CONDITIONS, cfg.psth, cfg.movements, cfg.min_edge_rate_hz,
 %           and cfg.statistics filled in.
 %           Existing fields are overwritten. Project/version scripts may
@@ -30,9 +32,9 @@ if nargin < 1 || isempty(project)
     error('Provide project name.');
 end
 
-% Path roots. Project settings live in this repo under settings/<project>/epp/.
+% Path roots. Project settings live in this repo under settings/<project>/.
 repo_root = fileparts(mfilename('fullpath'));
-cfg.roots.settings = [fullfile(repo_root, 'settings', project, 'epp') filesep];
+cfg.roots.settings = [fullfile(repo_root, 'settings', project) filesep];
 cfg.roots.sorting_tables = 'Y:\Data\Sorting_tables';
 cfg.roots.ephys_tanks = 'Y:\Data\TDTtanks';
 cfg.roots.behavior = 'Y:\Data';
@@ -43,6 +45,11 @@ cfg.roots.psth = fullfile(cfg.roots.project_version, 'unit_psth');
 cfg.roots.population_psth = fullfile(cfg.roots.project_version, 'population_psth');
 cfg.roots.statistics = fullfile(cfg.roots.project_version, 'statistics');
 
+% Sorting workbook sheet, spike-file threshold token, and unit_info.mat path.
+% Spike files are dataspikes_rb<FFF>_ch<CCC>_<spike_threshold>.mat.
+cfg.sorting_sheet = 'automatic_sorting';
+cfg.spike_threshold = 'negthr';
+cfg.unit_info_file = fullfile(cfg.roots.project_version, 'unit_info.mat');
 
 % Default pipeline behavior (project/version settings may override).
 cfg.monkeys = {};
@@ -54,6 +61,9 @@ cfg.min_edge_rate_hz = 0;
 
 % Default raster settings used by epp_initiation.
 cfg.raster_bin_size_s = 0.001;
+% Boxcar width in raster bins after interpolation. 1 leaves the trace unchanged.
+% Which traces are downsampled first is behavior_to_downsample in epp_build_rasters.
+cfg.raster_smooth_samples = 1;
 cfg.WINDOWS = struct( ...
     'name', {'Default'}, ...
     'align_state', {2}, ...

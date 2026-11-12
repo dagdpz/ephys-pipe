@@ -40,7 +40,9 @@ function [synchronization_results, synchronization_report] = epp_general_synchro
 %ephys_main_folder='Y:\Data\TDTtanks\Linus_phys';
 %behavior_main_folder='Y:\Data\Linus';
 
-epp_ensure_paths();
+repo_root = fileparts(mfilename('fullpath'));
+addpath(repo_root);
+addpath(genpath(fullfile(repo_root, 'external')));
 
 if nargin < 2 || isempty(ephys_main_folder) || isempty(behavior_main_folder)
     warning('Provide both ephys_main_folder and behavior_main_folder. Returning empty results.');
@@ -175,8 +177,7 @@ for d = 1:numel(day_dirs)
             end
 
             behavioral_data = load(behavior_file, 'trial');
-            behavioral_data.run = run_number;
-            [sync_data, report] = epp_synchronization(ephys_data, behavioral_data);
+            [sync_data, report] = epp_synchronization(ephys_data, behavioral_data.trial, run_number);
 
             result_entry.continuous_timestamps = sync_data.continuous_timestamps;
             result_entry.Trial_timestamps = sync_data.Trial_timestamps;

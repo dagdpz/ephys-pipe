@@ -4,10 +4,10 @@ function cfg = epp_load_cfg(project, version)
 %   cfg = epp_load_cfg(project, version)
 %
 %   Inputs:
-%     project - char/string. Loads settings/<project>/epp/epp_project_settings.m
+%     project - char/string. Loads settings/<project>/general_project_settings.m
 %               when that file exists (warning if missing).
 %     version - char/string. Stored as cfg.project_version and used to load
-%               epp_<version>_settings.m from the same folder (warning if missing).
+%               settings/<project>/<version>.m (warning if missing).
 %
 %   Outputs:
 %     cfg - struct. Settings scripts are run() in this function's workspace and
@@ -31,7 +31,7 @@ cfg = struct;
 cfg.project_version = version;
 cfg = epp_general_settings(project, cfg);
 
-project_settings = [cfg.roots.settings 'epp_project_settings.m'];
+project_settings = [cfg.roots.settings 'general_project_settings.m'];
 if exist(project_settings, 'file')
     run(project_settings);
 else
@@ -39,7 +39,7 @@ else
 end
 
 if ~isempty(cfg.project_version)
-    version_settings = [cfg.roots.settings sprintf('epp_%s_settings.m', cfg.project_version)];
+    version_settings = [cfg.roots.settings sprintf('%s.m', cfg.project_version)];
     if exist(version_settings, 'file')
         run(version_settings);
     else

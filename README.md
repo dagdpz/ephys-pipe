@@ -15,9 +15,8 @@ Project and version configuration live in this repo:
 ```
 settings/
   <project>/
-    epp/
-      epp_project_settings.m      ← monkeys, datasets, WINDOWS, CONDITIONS, …
-      epp_<version>_settings.m    ← optional version overrides (e.g. epp_version_a_settings.m)
+    general_project_settings.m    ← monkeys, datasets, WINDOWS, CONDITIONS, …
+    <version>.m                   ← optional version overrides (e.g. version_a.m)
 ```
 
 Loaded by `epp_load_cfg(project, version)` before any stage runs. See [Configuration](#configuration).
@@ -92,7 +91,7 @@ The pipeline reads and writes sheet **`automatic_sorting`** only (`epp_sorting_t
 | Column | Why it matters |
 |--------|------------------|
 | **`Dataset`** | Numeric study/dataset ID. Filtered by `cfg.datasets` in project settings (e.g. `cfg.datasets = [3]`). Rows not in that list are skipped. **Set this before running the pipeline.** |
-| **`Hemisphere`** | Recorded hemisphere per unit (`L` / `R`, case-insensitive). **Required** — `epp_build_rasters` errors if missing or invalid. Used to flip lateral trial variables (see [Trial enrichment](#trial-enrichment-stage-2)). |
+| **`Hemisphere`** | Recorded hemisphere per unit (`L` / `R`, case-insensitive). **Required** — `epp_load_unit_combined` errors if missing or invalid. Used to flip lateral trial variables (see [Trial enrichment](#trial-enrichment-stage-2)). |
 | **`Perturbation`** | Perturbation per block, **same pipe format as `Blocks`** (e.g. blocks `\|2\|5\|` → perturbation `\|0\|1\|`). Set on `trial.perturbation` during block alignment. Scalar or empty → same value / `0` for all blocks. |
 | `SNR`, stability, ranking | Quality / inclusion criteria |
 | Grid-hole / anatomical fields | Any extra columns you use for curation |
@@ -159,19 +158,27 @@ Add this repository to your MATLAB path, then:
 epp_initiation('project_tdt_brain', 'version_a');
 ```
 
-`project` and `version` select settings under `Settings/<project>/epp/`. Stages can also be run individually:
+`project` and `version` select settings under `settings/<project>/`. Stages can also be run individually:
 
 ```matlab
 cfg = epp_load_cfg('project_tdt_brain', 'version_a');
 epp_prepare_blocks(cfg);
-epp_build_rasters(cfg);
-epp_plot_psth(cfg);
+loaded_units = load(cfg.unit_info_file, 'unit_info');
+unit_info = loaded_units.unit_info;
+processed_blocks = epp_load_saved_processed_blocks(cfg.roots.processed_trials);
+unit_statistics = repmat(struct('Neuron_ID', '', 'comparisons', struct()), numel(unit_info), 1);
+for u = 1:numel(unit_info)
+    epp_build_rasters(cfg, unit_info(u), processed_blocks);
+    unit_statistics(u) = epp_compute_statistics(cfg, unit_info(u));
+    epp_plot_psth(cfg, unit_info(u));
+end
+epp_save_unit_statistics(cfg, unit_statistics);
 epp_plot_population_psth(cfg);
 ```
 
 ### What `epp_initiation` does
 
-Loads `cfg` once via `epp_load_cfg`, then runs four stages:
+Loads `cfg` once via `epp_load_cfg`, runs stage 1, loads `unit_info` once, then for each unit runs raster, statistics, and PSTH before writing the statistics table and the population PSTH:
 
 #### Stage 1 — `epp_prepare_blocks`
 
@@ -186,17 +193,22 @@ Behavior is mapped into ephys block time using state 2 as the trial anchor.
 
 #### Stage 2 — `epp_build_rasters`
 
-1. Load `unit_info.mat` and saved block payloads
-2. Per unit (single pass): load spike file, offset behavioral timestamps by block segment start (`par.segmentends`), concatenate across blocks
-3. Tag `trial.block` and `trial.perturbation` per block; **`epp_enrich_trials_for_unit`** flips lateral fields by `Hemisphere` (see below)
-4. Per `cfg.WINDOWS` entry: align spikes to state events, bin, attach trial metadata; save `<Neuron_ID>_raster.mat`
-5. Per trial × epoch: mean firing rate (Hz) in epoch window relative to align state
-6. Run comparisons from `cfg.statistics.comparisons` (built in `epp_load_cfg` from the two settings tables below)
-7. Save `unit_statistics.mat` and `unit_statistics.xlsx` under `cfg.roots.statistics`
+1. `epp_initiation` has already loaded `unit_info` and the block payloads; this call is one unit
+2. **`epp_load_unit_combined`** loads the spike file, offsets behavioral timestamps by block segment start (`par.segmentends`), concatenates blocks
+3. That loader tags `trial.block` and `trial.perturbation`, then **`epp_enrich_trials_for_unit`** flips lateral fields by `Hemisphere` (see below)
+4. Per `cfg.WINDOWS` entry: align spikes to state events, bin, attach trial metadata
+5. Per `cfg.EPOCHS` entry: one firing rate (spikes/s) per align event, plus `trial_n` (`raster_data.epochs`). Save `<Neuron_ID>_raster.mat`
+
+#### Stage 3 — `epp_compute_statistics`
+
+1. Load this unit's `<Neuron_ID>_raster.mat` field `epochs` (no spike reload) and return that unit's comparisons. Paired tests match on `trial_n`
+2. Unpaired tests use those per-event rates after the condition mask. Paired tests (`across_epochs`) keep a trial only when both epochs have the same number of events from it, matched in time
+3. Comparisons come from `cfg.statistics.comparisons` (built in `epp_load_cfg` from the two settings tables below)
+4. After the unit loop, `epp_save_unit_statistics` writes `unit_statistics.mat` and `unit_statistics.xlsx`
 
 #### Trial enrichment (stage 2)
 
-`epp_enrich_trials_for_unit(trials, unit_row)` runs once per unit after blocks are concatenated. Sorting-table columns (exact header names):
+`epp_enrich_trials_for_unit(trials, unit_row)` runs inside `epp_load_unit_combined` after that unit's blocks are concatenated (stage 2). Sorting-table columns (exact header names):
 
 | Excel column | Trial field | Rule |
 |--------------|-------------|------|
@@ -219,16 +231,16 @@ Behavior is mapped into ephys block time using state 2 as the trial anchor.
 
 Condition indices refer to rows in `cfg.CONDITIONS`.
 
-#### Stage 3 — `epp_plot_psth`
+#### Stage 4 — `epp_plot_psth`
 
-1. Load all raster files
+1. Load this unit's raster file
 2. For each window, split aligned events (trials) by `cfg.CONDITIONS` — see [Condition parameters](#condition-parameters-cfgconditions)
 3. Smooth raster rates, rebin to PSTH bins, plot PSTH + condition-colored raster
 4. Save `<Neuron_ID>_psth.png` and `<Neuron_ID>_psth.mat`
 
-#### Stage 4 — `epp_plot_population_psth`
+#### Stage 5 — `epp_plot_population_psth`
 
-1. Load all unit `*_psth.mat` files from stage 3
+1. Load all unit `*_psth.mat` files from stage 4
 2. Per window and condition: mean across units of per-unit PSTH curves; SEM across units
 3. Plot PSTH only (no raster), shaded ± SEM
 4. Save `population_psth.png` and `population_psth.mat` under `cfg.roots.population_psth`
@@ -241,9 +253,9 @@ Written under `cfg.roots.project_version` (default `Y:\Projects\<project>\<versi
 |-------|------------------------|------------|
 | 1 | `processed_trials` (`.../behavior/`) | `<monkey>_<YYYYMMDD>_Block-<NNN>.mat`, `unit_info.mat`, `prepare_blocks_report.txt` |
 | 2 | `raster` (`.../unit_rasters/`) | `<Neuron_ID>_raster.mat` |
-| 2 | `statistics` (`.../statistics/`) | `unit_statistics.mat`, `unit_statistics.xlsx` |
-| 3 | `psth` (`.../unit_psth/`) | `<Neuron_ID>_psth.png`, `<Neuron_ID>_psth.mat` |
-| 4 | `population_psth` (`.../population_psth/`) | `population_psth.png`, `population_psth.mat` |
+| 3 | `statistics` (`.../statistics/`) | `unit_statistics.mat`, `unit_statistics.xlsx` |
+| 4 | `psth` (`.../unit_psth/`) | `<Neuron_ID>_psth.png`, `<Neuron_ID>_psth.mat` |
+| 5 | `population_psth` (`.../population_psth/`) | `population_psth.png`, `population_psth.mat` |
 
 `prepare_blocks_report.txt` lines: `ephys_block - behavior_file - run=N - messages` (sync reports, missing files, empty trials, etc.).
 
@@ -256,8 +268,8 @@ Written under `cfg.roots.project_version` (default `Y:\Projects\<project>\<versi
 | Step | File | Required |
 |------|------|----------|
 | 1 | `ephys-pipe/epp_general_settings.m` | yes |
-| 2 | `settings/<project>/epp/epp_project_settings.m` | warned if missing |
-| 3 | `settings/<project>/epp/epp_<version>_settings.m` | warned if missing |
+| 2 | `settings/<project>/general_project_settings.m` | warned if missing |
+| 3 | `settings/<project>/<version>.m` | warned if missing |
 
 Each script is `run()` in the MATLAB workspace and assigns fields to `cfg` (override only what you need). `epp_load_cfg` creates any missing output root folders.
 
@@ -265,7 +277,7 @@ Each script is `run()` in the MATLAB workspace and assigns fields to `cfg` (over
 
 | Field | Default role |
 |-------|----------------|
-| `settings` | `settings/<project>/epp/` |
+| `settings` | `settings/<project>/` |
 | `sorting_tables` | UltraSort Excel + electrode-depth scripts |
 | `ephys_tanks` | TDT tanks + spike `.mat` files |
 | `behavior` | MonkeyPsych `.mat` files |
@@ -276,6 +288,8 @@ Each script is `run()` in the MATLAB workspace and assigns fields to `cfg` (over
 | `population_psth` | `.../population_psth/` |
 | `statistics` | `.../statistics/` |
 
+`cfg.unit_info_file` is the `unit_info.mat` path (default `.../behavior/unit_info.mat`), not a folder root. `cfg.sorting_sheet` (default `automatic_sorting`) is the UltraSort sheet. `cfg.spike_threshold` (default `negthr`) is the token in `dataspikes_rbFFF_chCCC_<threshold>.mat`.
+
 ### Analysis parameters (typical project overrides)
 
 - `cfg.monkeys` — e.g. `{'TDTbrain'}`
@@ -285,12 +299,12 @@ Each script is `run()` in the MATLAB workspace and assigns fields to `cfg` (over
 - `cfg.raster_bin_size_s` — raster bin width (default 1 ms)
 - `cfg.psth.bin_size_s`, `cfg.psth.smoothing_kernel`, `cfg.psth.smoothing_width_s`
 - `cfg.EPOCHS` — cell table in settings (`name | state | start | end`); struct array after `epp_load_cfg`
-- `cfg.statistics.within_epoch` / `cfg.statistics.across_epochs` — comparison cell tables (see stage 2)
+- `cfg.statistics.within_epoch` / `cfg.statistics.across_epochs` — comparison cell tables (see stage 3)
 - `cfg.statistics.within_epoch_test` / `cfg.statistics.across_epochs_test` — default tests per table
 
 ### Condition parameters (`cfg.CONDITIONS`)
 
-Used in stage 3 (`epp_plot_psth`). Each aligned event carries the behavioral `trial` struct active at align time (from stage 2). Conditions select which events go into each PSTH curve and raster stripe color.
+Used in stage 4 (`epp_plot_psth`). Each aligned event carries the behavioral `trial` struct active at align time (from stage 2). Conditions select which events go into each PSTH curve and raster stripe color.
 
 **Struct fields per condition:**
 
@@ -300,7 +314,7 @@ Used in stage 3 (`epp_plot_psth`). Each aligned event carries the behavioral `tr
 | `color` | RGB line / raster-dot color (`0–1` or `0–255`) |
 | `parameters` | Struct of trial-field filters (see matching rules below) |
 
-**Example** (left vs right target, from `epp_project_settings.m`):
+**Example** (left vs right target, from `general_project_settings.m`):
 
 ```matlab
 cfg.CONDITIONS = struct( ...
@@ -338,13 +352,16 @@ So conditions are flexible: you define arbitrary trial-field combinations, and e
 | Function | Role |
 |----------|------|
 | `epp_update_sorting_table` | Preprocessing: regenerate `automatic_sorting` from spikes + electrode depths |
-| `epp_initiation` | Run all four pipeline stages |
+| `epp_initiation` | Run all five pipeline stages |
 | `epp_load_cfg` | Build `cfg` from settings hierarchy |
 | `epp_prepare_blocks` | Stage 1: sync behavior ↔ ephys, save blocks |
-| `epp_build_rasters` | Stage 2: per-unit rasters + epoch statistics |
-| `epp_enrich_trials_for_unit` | Stage 2: flip lateral trials by `Hemisphere` |
-| `epp_plot_psth` | Stage 3: condition-split PSTHs |
-| `epp_plot_population_psth` | Stage 4: population PSTH across units |
+| `epp_build_rasters` | Stage 2: rasters plus per-event epoch firing rates |
+| `epp_load_unit_combined` | Align one unit's spikes to its blocks (stage 2) |
+| `epp_compute_statistics` | Stage 3: one unit's tests on its saved epoch rates |
+| `epp_save_unit_statistics` | Write `unit_statistics.mat` / `.xlsx` after the unit loop |
+| `epp_enrich_trials_for_unit` | Flip lateral trials by `Hemisphere` (called from the unit loader) |
+| `epp_plot_psth` | Stage 4: condition-split PSTHs |
+| `epp_plot_population_psth` | Stage 5: population PSTH across units |
 | `epp_synchronization` | Align one behavioral run to one ephys block |
 | `MP_add_saccades_and_reaches` | Enrich trials with movement timing and targets |
 | `epp_sorting_table_to_units` | Parse `automatic_sorting` into unit structs |

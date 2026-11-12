@@ -1,8 +1,9 @@
-function epp_update_sorting_table(monkey,dates)
-%EPP_UPDATE_SORTING_TABLE  Rebuild the automatic_sorting sheet from spikes.
+function epp_update_sorting_table(monkey,dates,cfg)
+%EPP_UPDATE_SORTING_TABLE  Rebuild the sorting sheet from spikes.
 %
 %   epp_update_sorting_table(monkey)
 %   epp_update_sorting_table(monkey, dates)
+%   epp_update_sorting_table(monkey, dates, cfg)
 %
 %   Inputs:
 %     monkey - char/string, at least 3 characters (e.g. 'Flaffus').
@@ -10,18 +11,18 @@ function epp_update_sorting_table(monkey,dates)
 %              every YYYYMMDD subfolder.
 %
 %   Reads (not via cfg; paths come from DAG_get_server_IP):
-%     <drive>\Data\TDTtanks\<monkey>_phys\<YYYYMMDD>\dataspikes_*negthr.mat
+%     <drive>\Data\TDTtanks\<monkey>_phys\<YYYYMMDD>\dataspikes_*<spike_threshold>.mat
 %         cluster_class col 1 = sort code, col 2 = spike time in ms.
 %     <drive>Data\Sorting_tables\<monkey>\Electrode_depths_<monkey(1:3)>.m
 %         script that must assign Session, block, channels, z.
 %     <drive>Data\Sorting_tables\<monkey>\<monkey(1:3)>_UltraSort.xlsx
-%         sheet automatic_sorting only. Missing file starts from a header row.
+%         sheet cfg.sorting_sheet only (default automatic_sorting). Missing file starts from a header row.
 %         Missing sheet is an error (a backup is still written).
 %
 %   Outputs:
 %     none. Before writing, copies the workbook to
 %     <Mon>_UltraSort_backup_yyyymmdd_HHMMSS.xlsx in the same folder.
-%     Then replaces the workbook with a single sheet, automatic_sorting.
+%     Then replaces the workbook with a single sheet, cfg.sorting_sheet.
 %     Columns filled here: Monkey, Session, Filenumber, Blocks, Channel, z,
 %     Unit, N_spk, Neuron_ID, Site_ID. Other columns are copied from the
 %     previous automatic_sorting sheet when session/channel/file/unit match.
@@ -32,10 +33,16 @@ function epp_update_sorting_table(monkey,dates)
 % Manual columns (SNR, stability, Dataset, Hemisphere, Perturbation, ...)
 % are kept when the previous automatic_sorting row matches.
 
-epp_ensure_paths();
+repo_root = fileparts(mfilename('fullpath'));
+addpath(repo_root);
+addpath(genpath(fullfile(repo_root, 'external')));
 max_depth_delta_for_same_file = 50;
 dag_drive=DAG_get_server_IP;
-threshold_used='negthr'; % to be changed to 'both'
+if nargin < 3 || isempty(cfg)
+    cfg = epp_general_settings('_', struct('project_version', ''));
+end
+threshold_used = cfg.spike_threshold;
+sheetname = cfg.sorting_sheet;
 
 %main_folder             =[dag_drive filesep 'Projects' filesep 'spikesorting' filesep 'testdata' filesep 'merge_data_structure' filesep 'TDTbrain' filesep];
 main_folder             =[dag_drive filesep 'Data' filesep 'TDTtanks' filesep monkey '_phys' filesep];
@@ -53,7 +60,6 @@ end
 % DBfolder=[DBpath filesep 'DAG' filesep 'phys' filesep monkey '_dpz' filesep];
 DBfolder=[dag_drive 'Data' filesep 'Sorting_tables' filesep monkey filesep];
 xlsx_path = [DBfolder monkey(1:3) '_UltraSort.xlsx'];
-sheetname = 'automatic_sorting';
 if isfile(xlsx_path)
     backup_sorting_workbook(xlsx_path);
     [~, sheets_available] = xlsfinfo(xlsx_path);
@@ -117,7 +123,7 @@ for s =1:numel(subfolders)
         site_per_session_counter=site_per_session_counter+1;
         matfile=matfiles{f};
         
-        load([main_folder date filesep matfile]);
+        sss=load([main_folder date filesep matfile]);
         %load([main_folder date filesep 'spikes' filesep matfile]);
         Channel=str2double(extractBetween(matfile,'_ch',['_' threshold_used]));
         Filenumber=str2double(extractBetween(matfile,'_rb','_ch'));
@@ -217,7 +223,7 @@ for s=1:numel(sessions)
     end
 end
 %[complete_mastertable]=DAG_update_cell_table(sorting_table,old_table,'Session');
-write_automatic_sorting_workbook(xlsx_path, complete_table);
+write_automatic_sorting_workbook(xlsx_path, complete_table, sheetname);
 end
 
 function sorting_table = empty_sorting_header()
@@ -237,16 +243,16 @@ end
 copyfile(xlsx_path, backup_path);
 end
 
-function write_automatic_sorting_workbook(xlsx_path, complete_table)
-% Write a new workbook whose only sheet is automatic_sorting, then replace
+function write_automatic_sorting_workbook(xlsx_path, complete_table, sheet_name)
+% Write a new workbook whose only sheet is sheet_name, then replace
 % the live file. The pre-update backup is already on disk.
 [folder, name, ext] = fileparts(xlsx_path);
 temp_path = fullfile(folder, [name '_writing' ext]);
 if isfile(temp_path)
     delete(temp_path);
 end
-xlswrite(temp_path, complete_table, 'automatic_sorting');
-keep_only_sheet(temp_path, 'automatic_sorting');
+xlswrite(temp_path, complete_table, sheet_name);
+keep_only_sheet(temp_path, sheet_name);
 if isfile(xlsx_path)
     delete(xlsx_path);
 end

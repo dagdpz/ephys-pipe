@@ -6,11 +6,11 @@ function epp_prepare_blocks(cfg)
 %   Inputs:
 %     cfg - struct from epp_load_cfg. Uses cfg.monkeys, cfg.datasets,
 %           cfg.movements (passed to MP_add_saccades_and_reaches),
-%           cfg.roots.sorting_tables, ephys_tanks, behavior, processed_trials.
+%           cfg.roots.sorting_tables, ephys_tanks, behavior, Trials.
 %
 %   Outputs:
-%     none. Writes into cfg.roots.processed_trials:
-%       unit_info.mat              - struct array of sorting-table units, plus .monkey
+%     none. Writes cfg.unit_info_file (sorting-table units, plus .monkey)
+%     and, into cfg.roots.Trials:
 %       <monkey>_<YYYYMMDD>_Block-<NNN>.mat
 %                                  - variable block_payload with fields
 %                                    monkey, session, block, trial, state, sample
@@ -31,26 +31,37 @@ epp_ensure_paths();
 unit_info = struct([]);
 report = repmat(struct('ephys_block', '', 'behavior_file', '', 'run', NaN, 'messages', ''), 0, 1);
 
+fields_to_remove = {'tSample_from_time_start','trial_number','state','sen_L','sen_R','jaw','body','states','states_onset','eye','hnd'};
+per_sample_fields = {'x_hnd','y_hnd','x_eye','y_eye'};
+per_sample_struct=[per_sample_fields' repmat({[]},numel(per_sample_fields),1)]';
+
+
 for m = 1:numel(cfg.monkeys)
     monkey = cfg.monkeys{m};
     monkey_units = epp_sorting_table_to_units(monkey, cfg);
     [monkey_units.monkey] = deal(monkey);
     unit_info = [unit_info; monkey_units]; %#ok<AGROW>
 
-    relevant_blocks = epp_get_relevant_blocks(monkey_units);
-    for b = 1:size(relevant_blocks,1)
-        session = relevant_blocks(b,1);
-        block = relevant_blocks(b,2);
+    % One row per (session, block) that any unit of this monkey actually is found in   
+    sessions_blocks=zeros(0,2);
+    for i = 1:numel(monkey_units)
+        pair = [repmat(monkey_units(i).Session, numel(monkey_units(i).Blocks), 1), monkey_units(i).Blocks(:)];
+        sessions_blocks = union(sessions_blocks, pair, 'rows');
+    end
+
+    for b = 1:size(sessions_blocks,1)
+        session = sessions_blocks(b,1);
+        block = sessions_blocks(b,2);
         day_token = sprintf('%08d', session);
         ephys_block_path = fullfile(cfg.roots.ephys_tanks, [monkey '_phys'], day_token, sprintf('Block-%d', block));
 
-        if ~isfolder(ephys_block_path)
-            report(end+1) = make_report_entry(ephys_block_path, '', NaN, 'Ephys block folder missing'); %#ok<AGROW>
-            continue;
-        end
-        ephys_data = TDTbin2mat_working(ephys_block_path, 'EXCLUSIVELYREAD', {'SVal','Tnum','RunN','Sess'});
-        run_candidates = epp_get_run_candidates(ephys_data);
-        if isempty(run_candidates)
+        ephys_data = TDTbin2mat_working(ephys_block_path, 'EXCLUSIVELYREAD', {'SVal','Tnum','RunN','Sess'});       
+
+        if isfield(ephys_data, 'epocs') && isfield(ephys_data.epocs, 'RunN') && isfield(ephys_data.epocs.RunN, 'data') && numel(ephys_data.epocs.RunN.data)>1
+            runs = ephys_data.epocs.RunN.data;
+            runs = unique(runs(2:end)); % skipping first potentially corrupted value
+            runs = runs(:)';
+        else
             report(end+1) = make_report_entry(ephys_block_path, '', NaN, 'No run candidates in ephys block'); %#ok<AGROW>
             continue;
         end
@@ -58,35 +69,50 @@ for m = 1:numel(cfg.monkeys)
         block_payload = struct('monkey', monkey, 'session', session, 'block', block, ...
             'trial', struct([]), ...
             'state', struct('Value', [], 'timestamps', []), ...
-            'sample', struct('x_hnd', [], 'y_hnd', [], 'x_eye', [], 'y_eye', [], 'timestamps', []));
+            'sample', struct(per_sample_struct{:}, 'timestamps', []));
 
-        for r = 1:numel(run_candidates)
-            run_number = run_candidates(r);
-            fname = sprintf('%s%s-%s-%s_%02d.mat', monkey(1:3), day_token(1:4), day_token(5:6), day_token(7:8), run_number);
+        for r = 1:numel(runs)
+            run = runs(r);
+            fname = sprintf('%s%s-%s-%s_%02d.mat', monkey(1:3), day_token(1:4), day_token(5:6), day_token(7:8), run);
             behavior_file = fullfile(cfg.roots.behavior, monkey, day_token, fname);
 
             if ~isfile(behavior_file)
-                report(end+1) = make_report_entry(ephys_block_path, behavior_file, run_number, 'Behavior file missing'); %#ok<AGROW>
+                report(end+1) = make_report_entry(ephys_block_path, behavior_file, run, 'Behavior file missing'); %#ok<AGROW>
                 continue;
             end
 
             behavioral_data = load(behavior_file, 'trial');
-            processed_run.trial = MP_add_saccades_and_reaches(behavioral_data.trial, cfg.movements);
-            processed_run.run = run_number;
-            [sync_data, sync_report] = epp_synchronization(ephys_data, processed_run);
+            Trials = MP_add_saccades_and_reaches(behavioral_data.trial, cfg.movements);
+            [sync_data, sync_report] = epp_synchronization(ephys_data, Trials, run);
 
             run_messages = sync_report;
-            if isempty(sync_data.Trial_timestamps)
-                run_messages = append_report_message(run_messages, 'Synchronization returned no trial timestamps');
+            if isempty(sync_data.Trial_timestamps)                
+                run_messages = [run_messages ' | Synchronization returned no trial timestamps']; %#ok<AGROW>
             end
-            report(end+1) = make_report_entry(ephys_block_path, behavior_file, run_number, run_messages); %#ok<AGROW>
+            report(end+1) = make_report_entry(ephys_block_path, behavior_file, run, run_messages); %#ok<AGROW>
+            
+            keep_trials = ismember([Trials.n], sync_data.retained_behavior_trial_numbers);
+            Trials = Trials(keep_trials);
+            timestamps = num2cell(sync_data.Trial_timestamps);
+            [Trials.timestamp]=timestamps{:};
 
-            run_chunk = epp_build_run_chunk(processed_run, sync_data);
-            block_payload = epp_concatenate_aligned_data(block_payload, run_chunk);
+            existing_fields = fieldnames(Trials);
+            remove_fields = intersect([fields_to_remove per_sample_fields], existing_fields);
+            trial_export = rmfield(Trials, remove_fields);
+
+            block_payload.trial              = [block_payload.trial; trial_export(:)];                                  % #ok<AGROW>
+            block_payload.state.Value        = [block_payload.state.Value; sync_data.state_values(:)];                  % #ok<AGROW>
+            block_payload.state.timestamps   = [block_payload.state.timestamps; sync_data.state_onsets(:)];             % #ok<AGROW>
+            block_payload.sample.timestamps  = [block_payload.sample.timestamps; sync_data.continuous_timestamps(:)];   % #ok<AGROW>
+            
+            for f = 1:numel(per_sample_fields)
+                FN = per_sample_fields{f};
+                block_payload.sample.(FN)       = [block_payload.sample.(FN); vertcat(Trials.(FN))];                    % #ok<AGROW>
+            end
         end
 
         if isempty(block_payload.trial)
-            report(end+1) = make_report_entry(ephys_block_path, '', NaN, 'Block saved with no trial data'); %#ok<AGROW>
+            report(end+1) = make_report_entry(ephys_block_path, '', NaN, 'Block saved with no trial data');             % #ok<AGROW>
         end
 
         output_name = sprintf('%s_%s_Block-%03d.mat', monkey, day_token, block);
@@ -94,80 +120,12 @@ for m = 1:numel(cfg.monkeys)
     end
 end
 
-save(fullfile(cfg.roots.processed_trials, 'unit_info.mat'), 'unit_info');
+save(cfg.unit_info_file, 'unit_info');
 write_prepare_blocks_report(fullfile(cfg.roots.processed_trials, 'prepare_blocks_report.txt'), report);
 end
 
-function relevant_blocks = epp_get_relevant_blocks(units)
-relevant_blocks = zeros(0,2);
-for i = 1:numel(units)
-    session = units(i).Session;
-    blocks = units(i).Blocks;
-    for b = blocks
-        relevant_blocks(end+1,:) = [session b]; %#ok<AGROW>
-    end
-end
-relevant_blocks = unique(relevant_blocks, 'rows');
-relevant_blocks = sortrows(relevant_blocks, [1 2]);
-end
-
-function runs = epp_get_run_candidates(ephys_data)
-runs = [];
-if ~isfield(ephys_data, 'epocs') || ~isfield(ephys_data.epocs, 'RunN') || ...
-        ~isfield(ephys_data.epocs.RunN, 'data') || isempty(ephys_data.epocs.RunN.data)
-    return;
-end
-if numel(ephys_data.epocs.RunN.data)>1 && ephys_data.epocs.RunN.data(1) ~= ephys_data.epocs.RunN.data(2)
-    ephys_data.epocs.RunN.data(1) = ephys_data.epocs.RunN.data(2);
-end
-
-runs = unique(ephys_data.epocs.RunN.data(:));
-runs = runs(isfinite(runs));
-runs = runs(:)';
-end
-
-function run_chunk = epp_build_run_chunk(processed_run, sync_data)
-
-keep_trials = ismember([processed_run.trial.n], sync_data.retained_behavior_trial_numbers);
-trial_processed = processed_run.trial(keep_trials);
-n_assign = min(numel(trial_processed), numel(sync_data.Trial_timestamps));
-for tt = 1:numel(trial_processed)
-    trial_processed(tt).timestamp = NaN;
-end
-for tt = 1:n_assign
-    trial_processed(tt).timestamp = sync_data.Trial_timestamps(tt);
-end
-
-per_sample_fields = {'x_hnd','y_hnd','x_eye','y_eye'};
-sample_run = struct();
-for f = 1:numel(per_sample_fields)
-    FN = per_sample_fields{f};
-    sample_run.(FN) = vertcat(trial_processed.(FN));
-end
-sample_run.timestamps = sync_data.continuous_timestamps;
-
-fields_to_remove = {'tSample_from_time_start','trial_number','state','sen_L','sen_R','jaw','body','states','states_onset','eye','hnd'};
-existing_fields = fieldnames(trial_processed);
-remove_fields = intersect(fields_to_remove, existing_fields);
-trial_export = rmfield(trial_processed, remove_fields);
-
-run_chunk = struct( ...
-    'trial', trial_export, ...
-    'state', struct('Value', sync_data.state_values(:), 'timestamps', sync_data.state_onsets(:)), ...
-    'sample', sample_run);
-end
-
 function entry = make_report_entry(ephys_block, behavior_file, run_number, messages)
-entry = struct('ephys_block', ephys_block, 'behavior_file', behavior_file, ...
-    'run', run_number, 'messages', messages);
-end
-
-function messages = append_report_message(messages, msg)
-if isempty(messages)
-    messages = msg;
-else
-    messages = [messages ' | ' msg];
-end
+entry = struct('ephys_block', ephys_block, 'behavior_file', behavior_file, 'run', run_number, 'messages', messages);
 end
 
 function write_prepare_blocks_report(report_file, report)

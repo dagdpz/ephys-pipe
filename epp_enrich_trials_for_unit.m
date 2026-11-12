@@ -19,7 +19,7 @@ function trials = epp_enrich_trials_for_unit(trials, unit_row)
 %              demanded_hand, used_hand, reach_hand: 1 -> -1, 2 -> +1, then
 %              multiplied by the same sign. Other codes are only scaled.
 %
-% Flip lateral trial variables by recorded hemisphere (epp_build_rasters).
+% Flip lateral trial variables by recorded hemisphere (epp_load_unit_combined).
 %
 % Reads unit_row.Hemisphere from automatic_sorting. Perturbation and block are
 % set earlier during block alignment in load_unit_combined.
