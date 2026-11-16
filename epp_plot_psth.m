@@ -262,7 +262,8 @@ raster_data = loaded.raster_data;
     end
     xlabel(ax, 'Time (s)');
     ylabel(ax, 'Rate (Hz)');
-    title(ax, Neuron_ID, 'Interpreter', 'none');
+    blocks_txt = strtrim(sprintf('%g ', unit_row.Blocks));
+    title(ax, sprintf('%s  %s  ch %g  blocks %s  z %g', Neuron_ID, unit_row.Target, unit_row.Channel, blocks_txt, unit_row.z), 'Interpreter', 'none');
     if any(isgraphics(legend_h))
         legend(ax, legend_h(isgraphics(legend_h)), {cfg.CONDITIONS(isgraphics(legend_h)).name}, 'Interpreter', 'none', 'Location', 'northeast');
     end

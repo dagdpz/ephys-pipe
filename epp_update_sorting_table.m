@@ -36,7 +36,7 @@ function epp_update_sorting_table(monkey,dates,cfg)
 repo_root = fileparts(mfilename('fullpath'));
 addpath(repo_root);
 addpath(genpath(fullfile(repo_root, 'external')));
-max_depth_delta_for_same_file = 50;
+max_depth_delta_for_same_file = 0; %50;
 dag_drive=DAG_get_server_IP;
 if nargin < 3 || isempty(cfg)
     cfg = epp_general_settings('_', struct('project_version', ''));
@@ -123,7 +123,7 @@ for s =1:numel(subfolders)
         site_per_session_counter=site_per_session_counter+1;
         matfile=matfiles{f};
         
-        sss=load([main_folder date filesep matfile]);
+        load([main_folder date filesep matfile]);
         %load([main_folder date filesep 'spikes' filesep matfile]);
         Channel=str2double(extractBetween(matfile,'_ch',['_' threshold_used]));
         Filenumber=str2double(extractBetween(matfile,'_rb','_ch'));

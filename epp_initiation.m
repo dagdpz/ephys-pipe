@@ -27,9 +27,9 @@ loaded_units = load(cfg.unit_info_file, 'unit_info');
 unit_info = loaded_units.unit_info;
 
 processed_blocks = [];
-files = dir(fullfile(output_root, '*_Block-*.mat'));
+files = dir(fullfile(cfg.roots.processed_trials, '*_Block-*.mat'));
 for i = 1:numel(files)
-    file_path = fullfile(output_root, files(i).name);
+    file_path = fullfile(cfg.roots.processed_trials, files(i).name);
     payload = load(file_path, 'block_payload');
     processed_blocks = [processed_blocks payload.block_payload]; %#ok<AGROW>
 end
