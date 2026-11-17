@@ -23,14 +23,16 @@ function epp_update_sorting_table(monkey,dates,cfg)
 %     none. Before writing, copies the workbook to
 %     <Mon>_UltraSort_backup_yyyymmdd_HHMMSS.xlsx in the same folder.
 %     Then replaces the workbook with a single sheet, cfg.sorting_sheet.
-%     Columns filled here: Monkey, Session, Filenumber, Blocks, Channel, z,
-%     Unit, N_spk, Neuron_ID, Site_ID. Other columns are copied from the
-%     previous automatic_sorting sheet when session/channel/file/unit match.
-%     Blocks are pipe text ('|2|5|'). Unit 0 marks a channel with no sort codes.
+%     Columns filled here: Monkey, Session, Filenumber, Blocks, Perturbation,
+%     Channel, z, Unit, N_spk, Neuron_ID, Site_ID. Other columns are copied
+%     from the previous sheet when session/channel/file/unit match.
+%     Blocks and Perturbation are pipe text ('|2|5|', '|0|1|'), one
+%     perturbation value per block, from Electrode_depths_<Mon>.m. A re-update
+%     overwrites Perturbation. Unit 0 marks a channel with no sort codes.
 %
 % INPUT: epp_update_sorting_table('Flaffus',[20160608,20160609])
 % Rebuilds automatic_sorting from Electrode_depths and spike sort codes.
-% Manual columns (SNR, stability, Dataset, Hemisphere, Perturbation, ...)
+% Manual columns (SNR, stability, Dataset, Hemisphere, ...)
 % are kept when the previous automatic_sorting row matches.
 
 repo_root = fileparts(mfilename('fullpath'));
@@ -92,9 +94,13 @@ end
 old_table(1,:)=sorting_table;
 
 %% load electrode depths
-clear Session block channels z
+clear Session block channels z perturbation
 run([DBfolder  filesep 'Electrode_depths_' monkey(1:3)]);
-Electrode_depths=struct('Session',Session,'block',block,'channels',channels,'z',z);
+if ~exist('perturbation', 'var')
+    perturbation = [];
+end
+perturbation = pad_perturbation_cell(perturbation, Session);
+Electrode_depths=struct('Session',Session,'block',block,'channels',channels,'z',z,'perturbation',perturbation);
 
 %% Check for apparent mistakes (nonmatching channels for same cells would lead to errors later on)
 for c=1:numel(Electrode_depths)
@@ -131,10 +137,14 @@ for s =1:numel(subfolders)
         
         d=ismember([Electrode_depths.Session],session);
         
-        [channel_depths, channel_blocks] = get_channel_depths_and_blocks(Electrode_depths(d), Channel);
+        [channel_depths, channel_blocks, channel_perturbations] = get_channel_depths_and_blocks(Electrode_depths(d), Channel);
         channel_filenumbers = assign_filenumbers_from_depth(channel_depths, max_depth_delta_for_same_file);
         matching_entries = (channel_filenumbers == Filenumber);
         matched_blocks = channel_blocks(matching_entries);
+        matched_perturbations = channel_perturbations(matching_entries);
+        if numel(matched_perturbations) < numel(matched_blocks)
+            matched_perturbations(numel(matched_blocks)) = 0;
+        end
         matched_depths = channel_depths(matching_entries);
         z=matched_depths(1);
         
@@ -153,6 +163,7 @@ for s =1:numel(subfolders)
                 sorting_table{n_row,idx.Filenumber}=Filenumber;
                 sorting_table{n_row,idx.Channel}=Channel;
                 sorting_table{n_row,idx.Blocks}=serialize_blocks_for_excel(matched_blocks);
+                sorting_table{n_row,idx.Perturbation}=serialize_blocks_for_excel(matched_perturbations);
                 sorting_table{n_row,idx.Unit}=sortcode;
                 sorting_table{n_row,idx.N_spk}=sum(cluster_class(:,1)==sortcode);
                 sorting_table{n_row,idx.Neuron_ID}=[monkey(1:3) '_' date  '_' sprintf('%03d',unit_per_session_counter)];
@@ -167,6 +178,7 @@ for s =1:numel(subfolders)
             sorting_table{n_row,idx.Filenumber}=Filenumber;
             sorting_table{n_row,idx.Channel}=Channel;
             sorting_table{n_row,idx.Blocks}=serialize_blocks_for_excel(matched_blocks);
+            sorting_table{n_row,idx.Perturbation}=serialize_blocks_for_excel(matched_perturbations);
             sorting_table{n_row,idx.Unit}=0;
             sorting_table{n_row,idx.N_spk}=0;
             sorting_table{n_row,idx.Neuron_ID}=[monkey(1:3) '_' date  '_000'];
@@ -227,7 +239,7 @@ write_automatic_sorting_workbook(xlsx_path, complete_table, sheetname);
 end
 
 function sorting_table = empty_sorting_header()
-sorting_table = {'Monkey','Session','Filenumber','Blocks','Channel','z','Unit','N_spk','Neuron_ID','Site_ID'};
+sorting_table = {'Monkey','Session','Filenumber','Blocks','Perturbation','Channel','z','Unit','N_spk','Neuron_ID','Site_ID'};
 end
 
 function backup_sorting_workbook(xlsx_path)
@@ -296,9 +308,10 @@ excel.Quit;
 delete(excel);
 end
 
-function [channel_depths, channel_blocks] = get_channel_depths_and_blocks(electrode_depths_session, channel)
+function [channel_depths, channel_blocks, channel_perturbations] = get_channel_depths_and_blocks(electrode_depths_session, channel)
 channel_depths = [];
 channel_blocks = [];
+channel_perturbations = [];
 
 for i = 1:numel(electrode_depths_session)
     ch_i = electrode_depths_session(i).channels(:);
@@ -310,6 +323,31 @@ for i = 1:numel(electrode_depths_session)
     if any(keep)
         channel_depths = [channel_depths; z_i(keep)]; %#ok<AGROW>
         channel_blocks = [channel_blocks; repmat(electrode_depths_session(i).block, sum(keep), 1)]; %#ok<AGROW>
+        if isfield(electrode_depths_session(i), 'perturbation') && ~isempty(electrode_depths_session(i).perturbation)
+            pert_val = electrode_depths_session(i).perturbation;
+        else
+            pert_val = 0;
+        end
+        channel_perturbations = [channel_perturbations; repmat(pert_val, sum(keep), 1)]; %#ok<AGROW>
+    end
+end
+end
+
+function perturbation = pad_perturbation_cell(perturbation, session_cell)
+% Match perturbation cell array length to Session/block rows; empty -> 0.
+n_entries = numel(session_cell);
+if isempty(perturbation)
+    perturbation = repmat({0}, 1, n_entries);
+    return;
+end
+if numel(perturbation) < n_entries
+    perturbation = [perturbation, repmat({0}, 1, n_entries - numel(perturbation))]; %#ok<AGROW>
+elseif numel(perturbation) > n_entries
+    perturbation = perturbation(1:n_entries);
+end
+for i = 1:n_entries
+    if isempty(perturbation{i})
+        perturbation{i} = 0;
     end
 end
 end
@@ -352,15 +390,14 @@ end
 end
 
 function blocks_out = serialize_blocks_for_excel(blocks_in)
-% Convert block values to Excel-safe text representation.
-% Non-empty values are always stored as comma-separated text (e.g. '12,14').
+% Pipe text in input order, repeats kept: |1|2|3| and |0|0|0|.
 
 if isempty(blocks_in)
     blocks_out = '';
     return;
 end
 
-blocks_vec = unique(blocks_in(:).');
+blocks_vec = blocks_in(:).';
 blocks_vec = blocks_vec(isfinite(blocks_vec));
 if isempty(blocks_vec)
     blocks_out = '||';
