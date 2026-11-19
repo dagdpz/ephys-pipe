@@ -134,7 +134,7 @@ end
 Neuron_ID = neuron_id; %#ok<NASGU>
 windows = window_rasters; %#ok<NASGU>
 raster_file = fullfile(cfg.roots.raster, sprintf('%s_raster.mat', neuron_id));
-save(raster_file, 'Neuron_ID', 'windows', 'behavior', 'epochs', '-v7');
+save(raster_file, 'Neuron_ID', 'windows', 'behavior', 'epochs');
 end
 
 function cond_mask = event_condition_mask(trials, trial_n, conditions)
