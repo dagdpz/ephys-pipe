@@ -55,7 +55,7 @@ cfg.unit_info_file = fullfile(cfg.roots.project_version, 'unit_info.mat');
 cfg.monkeys = {};
 cfg.datasets = [];
 
-% Drop leading and trailing trials below this rate (spikes/s). 0 disables.
+% Drop leading and trailing trials at or below this rate (spikes/s).
 % Rate is that unit's spikes from one trial timestamp to the next.
 cfg.min_edge_rate_hz = 0;
 
@@ -118,6 +118,9 @@ cfg.movements.enable_cleaning = 1;
 cfg.psth.bin_size_s = 0.01;
 cfg.psth.smoothing_kernel = 'gaussian'; % 'gaussian' or 'box'
 cfg.psth.smoothing_width_s = 0.03;
+% Condition indices per vertical subplot. {} draws every condition on one axes.
+% {1, 2, 3} is one subplot per condition. {[1 2], [3 4]} overlays within a subplot.
+cfg.psth.condition_subplots = {};
 
 % Statistics (cell tables; merged to cfg.statistics.comparisons in epp_load_cfg).
 %

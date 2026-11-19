@@ -5,9 +5,10 @@ function unit_statistic = epp_compute_statistics(cfg, unit_row)
 %
 %   Inputs:
 %     cfg - struct from epp_load_cfg. Reads
-%           cfg.roots.raster/<Neuron_ID>_raster.mat (field epochs, written
-%           by epp_build_rasters). Uses cfg.CONDITIONS and
-%           cfg.statistics.comparisons. Does not read spike files.
+%           cfg.roots.raster/<Neuron_ID>_raster.mat (epochs from
+%           epp_build_rasters). Uses cfg.statistics.comparisons.
+%           Condition grouping uses epochs(ei).cond_mask. Does not read
+%           spike files.
 %     unit_row - one element of unit_info.
 %
 %   Outputs:
@@ -15,9 +16,10 @@ function unit_statistic = epp_compute_statistics(cfg, unit_row)
 %           (n_a, n_b, p, tstat, df, mean_a, mean_b, comparison metadata).
 %           epp_save_unit_statistics writes the table for every unit.
 %
-%   Each epochs row is one align event. Unpaired tests use those events
-%   after the condition mask. Paired tests match events on trial_n and keep
-%   a trial only when both epochs have the same number of events from it.
+%   Each epochs row is one align event. An event is kept when any of the
+%   requested cond_mask columns is true. Unpaired tests use those events.
+%   Paired tests match on trial_n and keep a trial only when both epochs
+%   have the same number of events from it.
 
 unit_statistic = struct('Neuron_ID', unit_row.Neuron_ID, 'comparisons', struct());
 raster_file = fullfile(cfg.roots.raster, sprintf('%s_raster.mat', unit_row.Neuron_ID));
@@ -25,13 +27,13 @@ if ~isfile(raster_file)
     error('epp_compute_statistics:MissingRaster', ...
         'No raster for %s. Run epp_build_rasters first.', unit_row.Neuron_ID);
 end
-loaded = load(raster_file, 'raster_data');
-if ~isfield(loaded.raster_data, 'epochs')
+loaded = load(raster_file, 'epochs');
+if ~isfield(loaded, 'epochs') || isempty(loaded.epochs)
     error('epp_compute_statistics:NoEpochRates', ...
         'Raster %s has no epochs. Re-run epp_build_rasters.', unit_row.Neuron_ID);
 end
 
-unit_statistic.comparisons = build_unit_comparisons(loaded.raster_data.epochs, cfg);
+unit_statistic.comparisons = build_unit_comparisons(loaded.epochs, cfg);
 end
 
 function comparisons = build_unit_comparisons(epochs, cfg)
@@ -46,7 +48,7 @@ for i = 1:numel(cfg.statistics.comparisons)
     cmp_def = cfg.statistics.comparisons(i);
     fr_a = epochs(resolve_epoch_index(epoch_idx_by_name, cmp_def.epoch));
     fr_b = epochs(resolve_epoch_index(epoch_idx_by_name, cmp_def.baseline_epoch));
-    [rates_a, rates_b] = comparison_rates(fr_a, fr_b, cmp_def, cfg.CONDITIONS);
+    [rates_a, rates_b] = comparison_rates(fr_a, fr_b, cmp_def);
 
     meta = struct( ...
         'comparison_scope', cmp_def.comparison_scope, ...
@@ -61,11 +63,9 @@ for i = 1:numel(cfg.statistics.comparisons)
 end
 end
 
-function [rates_a, rates_b] = comparison_rates(fr_a, fr_b, cmp_def, conditions)
-idx_a = condition_index_for_events(fr_a, conditions);
-idx_b = condition_index_for_events(fr_b, conditions);
-mask_a = fr_a.trial_n(:) > 0 & ismember(idx_a, cmp_def.conditions(:));
-mask_b = fr_b.trial_n(:) > 0 & ismember(idx_b, cmp_def.baseline_conditions(:));
+function [rates_a, rates_b] = comparison_rates(fr_a, fr_b, cmp_def)
+mask_a = event_condition_keep(fr_a, cmp_def.conditions);
+mask_b = event_condition_keep(fr_b, cmp_def.baseline_conditions);
 
 if strcmpi(cmp_def.test, 'paired_ttest')
     [rates_a, rates_b] = pair_epoch_rates_by_trial(fr_a, fr_b, mask_a, mask_b);
@@ -75,13 +75,19 @@ else
 end
 end
 
-function idx = condition_index_for_events(fr, conditions)
-idx = zeros(numel(fr.rate_hz), 1);
-valid = fr.trial_n(:) > 0;
-if ~any(valid) || isempty(fr.trial)
+function keep = event_condition_keep(fr, condition_idxs)
+% True when trial_n is valid and any requested cond_mask column is true.
+n = numel(fr.rate_hz);
+keep = false(n, 1);
+if ~isfield(fr, 'cond_mask') || isempty(fr.cond_mask)
     return
 end
-idx(valid) = assign_trial_condition_indices(fr.trial(valid), conditions);
+cols = condition_idxs(:).';
+cols = cols(cols >= 1 & cols <= size(fr.cond_mask, 2));
+if isempty(cols)
+    return
+end
+keep = fr.trial_n(:) > 0 & any(fr.cond_mask(:, cols), 2);
 end
 
 function [rates_a, rates_b] = pair_epoch_rates_by_trial(fr_a, fr_b, mask_a, mask_b)
@@ -106,18 +112,6 @@ for s = 1:numel(shared)
 end
 end
 
-function trial_condition_idx = assign_trial_condition_indices(trials, conditions)
-trial_condition_idx = zeros(numel(trials), 1);
-for ti = 1:numel(trials)
-    for ci = 1:numel(conditions)
-        if trial_matches_condition(trials(ti), conditions(ci))
-            trial_condition_idx(ti) = ci;
-            break;
-        end
-    end
-end
-end
-
 function epoch_idx = resolve_epoch_index(epoch_idx_by_name, epoch_name)
 if ~isKey(epoch_idx_by_name, epoch_name)
     error('epp_compute_statistics:UnknownEpoch', 'Unknown epoch: %s', epoch_name);
@@ -125,19 +119,6 @@ end
 epoch_idx = epoch_idx_by_name(epoch_name);
 end
 
-function tf = trial_matches_condition(trial_row, cond_def)
-tf = true;
-param_names = fieldnames(cond_def.parameters);
-for pi = 1:numel(param_names)
-    pn = param_names{pi};
-    if ~isfield(trial_row, pn)
-        tf = false;
-        return;
-    end
-    target_vals = cond_def.parameters.(pn);
-    tf = tf && ismember(trial_row.(pn), target_vals(:));
-end
-end
 
 function result = run_statistical_test(test_name, sample_a, sample_b, meta)
 result = meta;

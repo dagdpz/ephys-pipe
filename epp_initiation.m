@@ -37,8 +37,13 @@ end
 unit_statistics = repmat(struct('Neuron_ID', '', 'comparisons', struct()), numel(unit_info), 1);
 
 for u = 1:numel(unit_info)
-    epp_build_rasters(cfg, unit_info(u), processed_blocks);
+    unit = epp_load_unit_combined(unit_info(u), processed_blocks, cfg);
+    epp_build_rasters(cfg, unit);
     unit_statistics(u) = epp_compute_statistics(cfg, unit_info(u));
+end
+
+
+for u = 1:numel(unit_info)
     epp_plot_psth(cfg, unit_info(u));
 end
 
