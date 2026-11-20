@@ -15,10 +15,10 @@ function unit = epp_load_unit_combined(UI, Blocks_in, cfg)
 %
 %   unit.trial, .state, .sample, .spike_times
 
-Blocks_in =Blocks_in([Blocks_in.session] == UI.Session & strcmp({Blocks_in.monkey}, UI.monkey));
+Blocks_in =Blocks_in([Blocks_in.session] == UI.Session & strcmp({Blocks_in.monkey}, UI.Monkey));
 
 day_token = sprintf('%08d', UI.Session);
-session_folder = fullfile(cfg.roots.ephys_tanks, [UI.monkey '_phys'], day_token);
+session_folder = fullfile(cfg.roots.ephys_tanks, [UI.Monkey '_phys'], day_token);
 filename_spikes= sprintf('dataspikes_rb%03d_ch%03d_%s.mat', UI.Filenumber, UI.Channel, cfg.spike_threshold);
 filename_fused = sprintf('datafused_rb%03d_ch%03d.mat', UI.Filenumber, UI.Channel);
 
@@ -28,41 +28,35 @@ par = spike_data.par;
 
 fused = load(fullfile(session_folder, filename_fused), 'par');
 segment_ends = fused.par.segmentends(:) ./ par.sr;
-segment_starts = [0; segment_ends(1:end-1)];
-spike_times = cc(cc(:, 1) == UI.Unit, 2) / 1000;
 
-
-cfg.sample_fields = {'x_hnd', 'y_hnd', 'x_eye', 'y_eye', 'timestamps'};
-sf=[cfg.sample_fields' cell(size(cfg.sample_fields))']';
-unit = struct( 'trial', struct([]), 'state', struct('Value', [], 'timestamps', []), 'spike_times', spike_times, 'sample', struct(sf{:}));
+unit=UI;
+unit.segment_starts = [0; segment_ends(1:end-1)];
+unit.spike_times = cc(cc(:, 1) == UI.Unit, 2) / 1000;
+unit.trial=struct([]);
+unit.state=struct('Value', [], 'timestamps', []);
 
 %% concatenate_across_blocks
-unit=concatenate_blocks(UI,unit,Blocks_in,segment_starts,cfg);
+unit=concatenate_blocks(unit,Blocks_in);
 
 %% add hemisphere and adjust space/hand to contra/ipsi
-unit.trial = hemisphere_transformation(unit.trial, UI);
+unit = hemisphere_transformation(unit);
 
 %% trim trials (beginning and end across ALL blocks !)
 unit = trim_low_rate_edge_trials(unit, cfg);
-
-unit.Neuron_ID=UI.Neuron_ID;
 end
 
-function unit = concatenate_blocks(UI,unit,Blocks_in,segment_starts,cfg)
+function unit = concatenate_blocks(unit,Blocks_in)
 
-blocks = UI.Blocks;
-perturbations = UI.Perturbation;
-
-for bi = 1:numel(blocks)
-    b = blocks(bi);
-    idx_block = [Blocks_in.block] == bi;
+for bi = 1:numel(unit.Blocks)
+    b = unit.Blocks(bi);
+    idx_block = [Blocks_in.block] == b;
     %if isempty(idx_block), continue; end
     bp = Blocks_in(idx_block);
 
-    segment_start_s = segment_starts(bi);
+    segment_start_s = unit.segment_starts(bi);
     trial_aligned = bp.trial;
     [trial_aligned.block] = deal(b);
-    [trial_aligned.perturbation] = deal(perturbations(bi));
+    [trial_aligned.perturbation] = deal(unit.Perturbation(bi));
     ts_cell = num2cell([trial_aligned.timestamp] + segment_start_s);
     [trial_aligned.timestamp] = ts_cell{:};
 
@@ -73,51 +67,47 @@ for bi = 1:numel(blocks)
 
     unit.state.Value = [unit.state.Value; bp.state.Value(:)];                        % #ok<AGROW>
     unit.state.timestamps = [unit.state.timestamps; state_timestamps(:)];         % #ok<AGROW>
-
-    for bv = 1:numel(cfg.sample_fields)
-        FN = cfg.sample_fields{bv};
-        unit.sample.(FN) = [unit.sample.(FN); bp.sample.(FN)(:)];                     % #ok<AGROW>
-    end
 end
 
 end
 
-function trials = hemisphere_transformation(trials, UI)
-
+function unit = hemisphere_transformation(unit)
+trial=unit.trial;
 rec_hemi_sign=NaN;
-if ~isempty(UI.Hemisphere)
-    hemisphere = lower(UI.Hemisphere(1));
+if ~isempty(unit.Hemisphere)
+    hemisphere = lower(unit.Hemisphere(1));
     if hemisphere == 'l'; rec_hemi_sign = 1; elseif hemisphere == 'r';  rec_hemi_sign = -1; end
 end
 
 if isnan(rec_hemi_sign)
     error('epp_enrich_trials_for_unit:InvalidHemisphere', ...
-        'Unit %s has missing or invalid hemisphere. Expected left (L/l) or right (R/r).', UI.Neuron_ID);
+        'Unit %s has missing or invalid hemisphere. Expected left (L/l) or right (R/r).', unit.Neuron_ID);
 end
 
 target_pos_fields = {'tar_pos', 'nct_pos', 'fix_pos', 'reach_tar_pos_closest', 'saccade_tar_pos_closest', 'hemifield'};
 hand_fields = {'demanded_hand', 'used_hand', 'reach_hand'};
 
 for f = target_pos_fields
-    if ~isfield(trials, f{1}), continue; end
-    IN = [trials.(f{:})];
+    if ~isfield(trial, f{1}), continue; end
+    IN = [trial.(f{:})];
     if isreal(IN)
         OUT = num2cell(real(IN) * rec_hemi_sign);
     else
         OUT = num2cell(real(IN) * rec_hemi_sign + 1i * imag(IN));
     end
-    [trials.(f{:})] = deal(OUT{:});
+    [trial.(f{:})] = deal(OUT{:});
 end
 
 for f = hand_fields
-    if ~isfield(trials, f{1}), continue; end
-    IN = [trials.(f{:})];
+    if ~isfield(trial, f{1}), continue; end
+    IN = [trial.(f{:})];
     OUT = IN;
     OUT(IN == 1) = -1; % left hand
     OUT(IN == 2) = 1;  % right hand
     OUT = num2cell(OUT * rec_hemi_sign);
-    [trials.(f{:})] = deal(OUT{:});
+    [trial.(f{:})] = deal(OUT{:});
 end
+unit.trial=trial;
 end
 
 function unit = trim_low_rate_edge_trials(unit, cfg)
@@ -171,13 +161,4 @@ unit.trial = unit.trial(first_keep:last_keep);
 keep = unit.state.timestamps >= t0 & unit.state.timestamps < t1;
 unit.state.Value = unit.state.Value(keep);
 unit.state.timestamps = unit.state.timestamps(keep);
-%samples
-keep = unit.sample.timestamps >= t0 & unit.sample.timestamps < t1;
-for i = 1:numel(cfg.sample_fields)
-    fn = cfg.sample_fields{i};
-    if numel(unit.sample.(fn)) == numel(keep)
-        unit.sample.(fn) = unit.sample.(fn)(keep);
-    end
-end
-
 end

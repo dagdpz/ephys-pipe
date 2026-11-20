@@ -1,12 +1,13 @@
 function epp_plot_population_psth(cfg)
-%EPP_PLOT_POPULATION_PSTH  Stage 5: mean PSTH across units.
+%EPP_PLOT_POPULATION_PSTH  Stage 5: mean PSTH across units from rasters.
 %
 %   epp_plot_population_psth(cfg)
 %
 %   Inputs:
-%     cfg - struct from epp_load_cfg. Reads *_psth.mat from cfg.roots.psth
-%           (skips a file named population_psth.mat). Uses cfg.CONDITIONS
-%           for names and colors. shadedErrorBar is loaded from external/.
+%     cfg - struct from epp_load_cfg. Reads *_raster.mat from cfg.roots.raster
+%           (Neuron_ID, windows). Builds condition PSTHs here from
+%           windows(wi).raster + cond_mask, same pad/smooth/crop as
+%           epp_plot_psth. Uses cfg.CONDITIONS for names and colors.
 %
 %   Outputs:
 %     none. Writes cfg.roots.population_psth/population_psth.png and
@@ -14,33 +15,33 @@ function epp_plot_population_psth(cfg)
 %     pop_data.n_units, pop_data.Neuron_ID (cellstr).
 %     pop_data.windows(wi).name, .align_state, .conditions(ci) with name,
 %     n_units, n_trials_total, bin_centers_s, mean_rate_hz, sem_rate_hz.
-%     Mean and SEM are across units, not across trials. Window layout is
-%     taken from the first loaded unit.
+%     Mean and SEM are across units, not across trials.
 %
-% Stage 5: aggregate per-unit PSTHs into population mean +/- SEM plots.
+% Stage 5: aggregate per-unit condition PSTHs into population mean +/- SEM.
 
 epp_ensure_paths();
-unit_psths = load_unit_psth_data(cfg.roots.psth);
-if isempty(unit_psths)
-    warning('epp_plot_population_psth:NoData', 'No unit PSTH files found in %s.', cfg.roots.psth);
+unit_rasters = load_unit_raster_windows(cfg.roots.raster);
+if isempty(unit_rasters)
+    warning('epp_plot_population_psth:NoData', 'No unit raster files found in %s.', cfg.roots.raster);
     return;
 end
 
-n_windows = numel(unit_psths(1).windows);
+n_windows = numel(unit_rasters(1).windows);
 if n_windows == 0
     return;
 end
 
 n_conditions = numel(cfg.CONDITIONS);
+conv_kernel = psth_conv_kernel(cfg);
 pop_data = struct();
-pop_data.n_units = numel(unit_psths);
-pop_data.Neuron_ID = {unit_psths.Neuron_ID};
+pop_data.n_units = numel(unit_rasters);
+pop_data.Neuron_ID = {unit_rasters.Neuron_ID};
 pop_data.windows = repmat(struct( ...
     'name', '', 'align_state', [], 'conditions', []), n_windows, 1);
 
 fig = figure('Color', 'w');
 for wi = 1:n_windows
-    w_ref = unit_psths(1).windows(wi);
+    w_ref = unit_rasters(1).windows(wi);
     pop_data.windows(wi).name = w_ref.name;
     pop_data.windows(wi).align_state = w_ref.align_state;
     pop_data.windows(wi).conditions = repmat(struct( ...
@@ -51,7 +52,8 @@ for wi = 1:n_windows
     hold(ax, 'on');
 
     for ci = 1:n_conditions
-        [unit_means, bin_centers, n_trials_vec] = collect_condition_psths(unit_psths, wi, ci);
+        [unit_means, bin_centers, n_trials_vec] = collect_condition_means( ...
+            unit_rasters, wi, ci, cfg, conv_kernel);
         if isempty(unit_means)
             continue;
         end
@@ -68,12 +70,8 @@ for wi = 1:n_windows
         pop_data.windows(wi).conditions(ci).sem_rate_hz = pop_sem;
 
         color = normalize_plot_color(cfg.CONDITIONS(ci).color);
-        x = bin_centers(:).';
-        y = pop_mean(:).';
-        sem = pop_sem(:).';
-        
-        lineProps={'LineWidth', 1.5, 'Color', color};
-        shadedErrorBar(x,y,sem,lineProps,0);
+        lineProps = {'LineWidth', 1.5, 'Color', color};
+        shadedErrorBar(bin_centers(:).', pop_mean(:).', pop_sem(:).', lineProps, 0);
     end
 
     hold(ax, 'off');
@@ -88,36 +86,95 @@ close(fig);
 save(fullfile(cfg.roots.population_psth, 'population_psth.mat'), 'pop_data');
 end
 
-function unit_psths = load_unit_psth_data(psth_root)
-unit_psths = struct([]);
-psth_files = dir(fullfile(psth_root, '*_psth.mat'));
-for i = 1:numel(psth_files)
-    if strcmp(psth_files(i).name, 'population_psth.mat')
-        continue;
+function unit_rasters = load_unit_raster_windows(raster_root)
+unit_rasters = struct([]);
+raster_files = dir(fullfile(raster_root, '*_raster.mat'));
+for i = 1:numel(raster_files)
+    loaded = load(fullfile(raster_root, raster_files(i).name), 'Neuron_ID', 'windows');
+    if ~isfield(loaded, 'windows') || isempty(loaded.windows)
+        continue
     end
-    loaded = load(fullfile(psth_root, psth_files(i).name), 'psth_data');
-    unit_psths = [unit_psths; loaded.psth_data]; %#ok<AGROW>
+    entry = struct('Neuron_ID', loaded.Neuron_ID, 'windows', loaded.windows);
+    unit_rasters = [unit_rasters; entry]; %#ok<AGROW>
 end
 end
 
-function [unit_means, bin_centers, n_trials_vec] = collect_condition_psths(unit_psths, wi, ci)
+function [unit_means, bin_centers, n_trials_vec] = collect_condition_means( ...
+    unit_rasters, wi, ci, cfg, conv_kernel)
 unit_means = [];
 bin_centers = [];
 n_trials_vec = [];
 
-for u = 1:numel(unit_psths)
-    if numel(unit_psths(u).windows) < wi
-        continue;
+for u = 1:numel(unit_rasters)
+    if numel(unit_rasters(u).windows) < wi
+        continue
     end
-    conds = unit_psths(u).windows(wi).conditions;
-    if numel(conds) < ci || isempty(conds(ci).mean_rate_hz)
-        continue;
+    w = unit_rasters(u).windows(wi);
+    [mean_rate, centers, n_trials] = unit_condition_psth(w, ci, cfg, conv_kernel);
+    if isempty(mean_rate)
+        continue
     end
     if isempty(bin_centers)
-        bin_centers = conds(ci).bin_centers_s(:).';
+        bin_centers = centers(:).';
+    elseif numel(centers) ~= numel(bin_centers) || any(centers(:) ~= bin_centers(:))
+        continue
     end
-    unit_means = [unit_means; conds(ci).mean_rate_hz(:).']; %#ok<AGROW>
-    n_trials_vec = [n_trials_vec; conds(ci).n_trials]; %#ok<AGROW>
+    unit_means = [unit_means; mean_rate(:).']; %#ok<AGROW>
+    n_trials_vec = [n_trials_vec; n_trials]; %#ok<AGROW>
+end
+end
+
+function [mean_rate, psth_centers, n_trials] = unit_condition_psth(w, ci, cfg, conv_kernel)
+% Same pad -> smooth -> crop -> psth-bin path as epp_plot_psth.
+mean_rate = [];
+psth_centers = [];
+n_trials = 0;
+if ~isfield(w, 'raster') || isempty(w.raster) || ~isfield(w, 'cond_mask') ...
+        || isempty(w.cond_mask) || ci > size(w.cond_mask, 2)
+    return
+end
+keep_mask = w.cond_mask(:, ci);
+if ~any(keep_mask)
+    return
+end
+
+core_cols = (w.psth_pad_bins + 1):(size(w.raster, 2) - w.psth_pad_bins);
+psth_edges = w.t_start_s:cfg.psth.bin_size_s:w.t_end_s;
+if numel(psth_edges) < 2 || psth_edges(end) < w.t_end_s
+    psth_edges(end+1) = w.t_end_s; %#ok<AGROW>
+end
+psth_centers = psth_edges(1:end-1).' + diff(psth_edges(1:2))/2;
+n_psth_bins = numel(psth_centers);
+raster_to_psth_bin = discretize(w.bin_centers(core_cols), psth_edges);
+
+cond_rate = double(w.raster(keep_mask, :)) ./ w.bin_size_s;
+cond_rate = conv2(cond_rate, conv_kernel, 'same');
+cond_rate = cond_rate(:, core_cols);
+cond_rate_psth = NaN(size(cond_rate, 1), n_psth_bins);
+for bi = 1:n_psth_bins
+    src_cols = raster_to_psth_bin == bi;
+    if any(src_cols)
+        cond_rate_psth(:, bi) = mean(cond_rate(:, src_cols), 2, 'omitnan');
+    end
+end
+mean_rate = mean(cond_rate_psth, 1, 'omitnan');
+n_trials = nnz(keep_mask);
+end
+
+function conv_kernel = psth_conv_kernel(cfg)
+bin_size_s = cfg.raster_bin_size_s;
+switch lower(char(cfg.psth.smoothing_kernel))
+    case 'gaussian'
+        sigma_bins = max(cfg.psth.smoothing_width_s / bin_size_s, eps);
+        radius_bins = max(1, ceil(4 * sigma_bins));
+        x = -radius_bins:radius_bins;
+        conv_kernel = exp(-0.5 * (x / sigma_bins).^2);
+        conv_kernel = conv_kernel ./ sum(conv_kernel);
+    case 'box'
+        box_bins = max(1, round(cfg.psth.smoothing_width_s / bin_size_s));
+        conv_kernel = ones(1, box_bins) / box_bins;
+    otherwise
+        conv_kernel = 1;
 end
 end
 

@@ -1,14 +1,16 @@
-function epp_plot_psth(cfg, UI)
+function epp_plot_psth(cfg, UI, accumulated_blocks)
 %EPP_PLOT_PSTH  Stage 4: condition-split PSTH and binned raster for one unit.
 %
-%   epp_plot_psth(cfg, unit_row)
+%   epp_plot_psth(cfg, unit_row, accumulated_blocks)
 %
 %   Inputs:
 %     cfg - struct from epp_load_cfg.
-%     unit_row - one element of unit_info. Loads windows + behavior from
+%     unit_row - one element of unit_info. Loads windows from
 %           cfg.roots.raster/<Neuron_ID>_raster.mat (epochs skipped).
-%           Uses windows(wi).cond_mask for grouping. Returns without writing
-%           if that file is missing.
+%           Uses windows(wi).cond_mask for grouping. Eye/hand come from
+%           accumulated_blocks via UI.Monkey/UI.Session + trial_block/trial_n
+%           and block-local event_times. Returns without writing if missing.
+%     accumulated_blocks - block_payload array from epp_initiation.
 %           Uses cfg.CONDITIONS for colors and names, and cfg.psth.condition_subplots
 %           for axes. condition_subplots empty: all conditions on one axes.
 %           A cell of index vectors: one vertical subplot per cell.
@@ -38,14 +40,15 @@ raster_file = fullfile(cfg.roots.raster, sprintf('%s_raster.mat', Neuron_ID));
 if ~isfile(raster_file)
     return
 end
-% Plot needs traces; stats can load epochs without windows/behavior.
-loaded = load(raster_file, 'windows', 'behavior');
+loaded = load(raster_file, 'windows');
 windows = loaded.windows;
-behavior = loaded.behavior;
 
 n_windows = numel(windows);
 n_cond = numel(cfg.CONDITIONS);
 conv_kernel = psth_conv_kernel(cfg);
+beh_channels = {'x_eye', 'y_eye', 'x_hnd', 'y_hnd'};
+beh_is_hand = [false false true true];
+beh_downsample = [true true false false];
 epp_ensure_paths();
 
 fig = figure('units','normalized','outerposition',[0 0 1 1],'color','w');
@@ -168,40 +171,44 @@ for gi = 1:n_groups
                 end
             end
 
-            % Top-level behavior(wi), parallel to windows — optional if absent.
-            if wi > numel(behavior) || isempty(behavior(wi).data)
-                continue
-            end
-            beh = behavior(wi).data;
-            ch = behavior(wi).channels;
-            i_eye = [find(strcmp(ch, 'x_eye'), 1) find(strcmp(ch, 'y_eye'), 1)];
-            i_hnd = [find(strcmp(ch, 'x_hnd'), 1) find(strcmp(ch, 'y_hnd'), 1)];
+            % Resample eye/hand: Monkey/Session from UI, block/trial_n per event.
             xx = w.bin_edges(:);
             xs = [];
             ys = [];
             is_hand = false(0, 1);
             for k = find(keep_mask).'
-                if k > size(beh, 1)
+                if k > numel(w.trial_block) || k > numel(w.trial_n) ...
+                        || ~(w.trial_block(k) > 0) || ~(w.trial_n(k) > 0) ...
+                        || ~isfinite(w.event_times(k))
                     continue
                 end
-                segs = {};
-                hand_flag = false(0, 1);
-                for ii = i_eye
-                    segs{end+1} = double(squeeze(beh(k, :, ii))).'; %#ok<AGROW>
-                    hand_flag(end+1) = false; %#ok<AGROW>
+                sample = block_sample_for_event(accumulated_blocks, UI.Monkey, UI.Session, ...
+                    w.trial_block(k), w.trial_n(k));
+                if isempty(sample) || isempty(sample.timestamps)
+                    continue
                 end
-                for ii = i_hnd
-                    segs{end+1} = double(squeeze(beh(k, :, ii))).'; %#ok<AGROW>
-                    hand_flag(end+1) = true; %#ok<AGROW>
+                t_edges = w.event_times(k) + [w.bin_edges(1) w.bin_edges(end)];
+                sample_idx_s = find(sample.timestamps > t_edges(1), 1, 'first') - 1;
+                sample_idx_e = find(sample.timestamps < t_edges(2), 1, 'last') + 1;
+                if isempty(sample_idx_s) || isempty(sample_idx_e) || sample_idx_s < 1 ...
+                        || sample_idx_e > numel(sample.timestamps)
+                    continue
                 end
-                for s = 1:numel(segs)
-                    v = segs{s};
+                sample_idx = sample_idx_s:sample_idx_e;
+                ts = sample.timestamps(sample_idx) - w.event_times(k);
+                for s = 1:numel(beh_channels)
+                    FN = beh_channels{s};
+                    if ~isfield(sample, FN)
+                        continue
+                    end
+                    v = double(resample_trace(ts, sample.(FN)(sample_idx), xx, ...
+                        beh_downsample(s), cfg.raster_smooth_samples));
                     if numel(v) ~= numel(xx)
                         continue
                     end
                     xs = [xs; xx + align_x(wi); NaN]; %#ok<AGROW>
                     ys = [ys; v; NaN]; %#ok<AGROW>
-                    is_hand = [is_hand; repmat(hand_flag(s), numel(xx), 1); false]; %#ok<AGROW>
+                    is_hand = [is_hand; repmat(beh_is_hand(s), numel(xx), 1); false]; %#ok<AGROW>
                 end
             end
             if isempty(xs)
@@ -297,6 +304,40 @@ drawnow;
 frame = getframe(fig);
 imwrite(frame.cdata, fullfile(cfg.roots.psth, sprintf('%s_psth.png', Neuron_ID)));
 close(fig);
+end
+
+function sample = block_sample_for_event(accumulated_blocks, monkey, session, block, trial_n)
+% Sample stream for one block; trial_n must exist in that block's trials.
+sample = struct('timestamps', []);
+if isempty(accumulated_blocks)
+    return
+end
+hit = strcmp({accumulated_blocks.monkey}, monkey) ...
+    & [accumulated_blocks.session] == session ...
+    & [accumulated_blocks.block] == block;
+if ~any(hit)
+    return
+end
+bp = accumulated_blocks(find(hit, 1, 'first'));
+if isempty(bp.trial) || ~any([bp.trial.n] == trial_n)
+    return
+end
+if isfield(bp, 'sample')
+    sample = bp.sample;
+end
+end
+
+function vq = resample_trace(ts, v, grid, downsample, smooth_samples)
+% Drop held samples, interp1 onto grid, then boxcar-smooth.
+ts = ts(:); v = v(:);
+if downsample
+    keep = unique([find([true; diff(v) ~= 0]); numel(v)]);
+    ts = ts(keep); v = v(keep);
+end
+vq = interp1(ts, v, grid(:), 'linear');
+if smooth_samples > 1
+    vq = movmean(vq, smooth_samples, 'omitnan');
+end
 end
 
 function conv_kernel = psth_conv_kernel(cfg)

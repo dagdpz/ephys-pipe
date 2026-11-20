@@ -5,8 +5,8 @@ function unit_statistic = epp_compute_statistics(cfg, unit_row)
 %
 %   Inputs:
 %     cfg - struct from epp_load_cfg. Reads
-%           cfg.roots.raster/<Neuron_ID>_raster.mat (epochs from
-%           epp_build_rasters). Uses cfg.statistics.comparisons.
+%           cfg.roots.epochs/<Neuron_ID>_epochs.mat (from epp_build_rasters).
+%           Uses cfg.statistics.comparisons.
 %           Condition grouping uses epochs(ei).cond_mask. Does not read
 %           spike files.
 %     unit_row - one element of unit_info.
@@ -18,16 +18,16 @@ function unit_statistic = epp_compute_statistics(cfg, unit_row)
 %
 %   Each epochs row is one align event. An event is kept when any of the
 %   requested cond_mask columns is true. Unpaired tests use those events.
-%   Paired tests match on trial_n and keep a trial only when both epochs
-%   have the same number of events from it.
+%   Paired tests match on unit-local trial_n and keep a trial only when both
+%   epochs have the same number of events from it.
 
 unit_statistic = struct('Neuron_ID', unit_row.Neuron_ID, 'comparisons', struct());
-raster_file = fullfile(cfg.roots.raster, sprintf('%s_raster.mat', unit_row.Neuron_ID));
-if ~isfile(raster_file)
+epochs_file = fullfile(cfg.roots.epochs, sprintf('%s_epochs.mat', unit_row.Neuron_ID));
+if ~isfile(epochs_file)
     error('epp_compute_statistics:MissingRaster', ...
         'No raster for %s. Run epp_build_rasters first.', unit_row.Neuron_ID);
 end
-loaded = load(raster_file, 'epochs');
+loaded = load(epochs_file, 'epochs');
 if ~isfield(loaded, 'epochs') || isempty(loaded.epochs)
     error('epp_compute_statistics:NoEpochRates', ...
         'Raster %s has no epochs. Re-run epp_build_rasters.', unit_row.Neuron_ID);
@@ -76,7 +76,7 @@ end
 end
 
 function keep = event_condition_keep(fr, condition_idxs)
-% True when trial_n is valid and any requested cond_mask column is true.
+% True when unit-local trial_n is valid and any cond_mask column is true.
 n = numel(fr.rate_hz);
 keep = false(n, 1);
 if ~isfield(fr, 'cond_mask') || isempty(fr.cond_mask)
@@ -91,8 +91,7 @@ keep = fr.trial_n(:) > 0 & any(fr.cond_mask(:, cols), 2);
 end
 
 function [rates_a, rates_b] = pair_epoch_rates_by_trial(fr_a, fr_b, mask_a, mask_b)
-% A trial contributes only when both epochs have the same event count for it.
-% Those events are paired in event_time order.
+% Pair on unit-local trial_n. Same event count required; sort by event_time.
 idx_a = find(mask_a);
 idx_b = find(mask_b);
 shared = intersect(fr_a.trial_n(idx_a), fr_b.trial_n(idx_b), 'stable');

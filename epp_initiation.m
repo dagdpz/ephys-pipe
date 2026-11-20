@@ -10,9 +10,9 @@ function epp_initiation(project, version)
 %
 %   Outputs:
 %     none. Calls epp_load_cfg and epp_prepare_blocks, loads unit_info once,
-%     then for each unit calls epp_build_rasters, epp_compute_statistics, and
-%     epp_plot_psth. Writes the statistics table and runs
-%     epp_plot_population_psth after that loop.
+%     then for each unit calls epp_build_rasters and epp_compute_statistics,
+%     then epp_plot_psth(cfg, unit, accumulated_blocks). Writes the statistics
+%     table and runs epp_plot_population_psth after that loop.
 %
 % Orchestrate the ephys-alignment pipeline stages.
 
@@ -26,28 +26,30 @@ epp_prepare_blocks(cfg);
 loaded_units = load(cfg.unit_info_file, 'unit_info');
 unit_info = loaded_units.unit_info;
 
-processed_blocks = [];
+accumulated_blocks = [];
 files = dir(fullfile(cfg.roots.processed_trials, '*_Block-*.mat'));
 for i = 1:numel(files)
     file_path = fullfile(cfg.roots.processed_trials, files(i).name);
     payload = load(file_path, 'block_payload');
-    processed_blocks = [processed_blocks payload.block_payload]; %#ok<AGROW>
+    accumulated_blocks = [accumulated_blocks payload.block_payload]; %#ok<AGROW>
+end
+
+
+for u = 1:numel(unit_info)
+    unit = epp_load_unit_combined(unit_info(u), accumulated_blocks, cfg);
+    epp_build_rasters(cfg, unit);
 end
 
 unit_statistics = repmat(struct('Neuron_ID', '', 'comparisons', struct()), numel(unit_info), 1);
-
 for u = 1:numel(unit_info)
-    unit = epp_load_unit_combined(unit_info(u), processed_blocks, cfg);
-    epp_build_rasters(cfg, unit);
     unit_statistics(u) = epp_compute_statistics(cfg, unit_info(u));
 end
-
+epp_save_unit_statistics(cfg, unit_statistics);
 
 for u = 1:numel(unit_info)
-    epp_plot_psth(cfg, unit_info(u));
+    epp_plot_psth(cfg, unit_info(u), accumulated_blocks);
 end
 
-epp_save_unit_statistics(cfg, unit_statistics);
 epp_plot_population_psth(cfg);
 end
 

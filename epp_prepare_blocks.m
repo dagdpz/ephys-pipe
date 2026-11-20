@@ -39,7 +39,6 @@ per_sample_struct=[per_sample_fields' repmat({[]},numel(per_sample_fields),1)]';
 for m = 1:numel(cfg.monkeys)
     monkey = cfg.monkeys{m};
     monkey_units = epp_sorting_table_to_units(monkey, cfg);
-    [monkey_units.monkey] = deal(monkey);
     unit_info = [unit_info; monkey_units]; %#ok<AGROW>
 
     % One row per (session, block) that any unit of this monkey actually is found in   
@@ -93,6 +92,9 @@ for m = 1:numel(cfg.monkeys)
             
             keep_trials = ismember([Trials.n], sync_data.retained_behavior_trial_numbers);
             Trials = Trials(keep_trials);
+            % now we are counting trials in the block!
+            N=num2cell(1:numel(Trials));
+            [Trials.n] = N{:};
             timestamps = num2cell(sync_data.Trial_timestamps);
             [Trials.timestamp]=timestamps{:};
 

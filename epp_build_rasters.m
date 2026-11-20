@@ -12,26 +12,22 @@ function epp_build_rasters(cfg, unit)
 %   Outputs:
 %     none. Writes cfg.roots.raster/<Neuron_ID>_raster.mat with top-level
 %     variables so callers can load selectively:
-%       Neuron_ID, windows, behavior, epochs
+%       Neuron_ID, windows, epochs
 %
-%   windows  - cfg.WINDOWS plus, per window:
-%       bin_edges, bin_centers, bin_size_s, psth_pad_bins, event_times,
-%       trial_n, cond_mask (n_events x n_conditions logical), raster
-%       (logical, spike present in bin). Multi-spike bins collapse to true.
-%       Changing cfg.CONDITIONS requires a rebuild.
-%   behavior - parallel to windows: .channels, .data
-%       (single, n_events x n_bin_edges x n_channels). Plot-only load.
-%   epochs   - cfg.EPOCHS plus event_time, rate_hz, trial_n, cond_mask.
-%       trial_n is only for paired tests across epochs.
+%   windows - cfg.WINDOWS plus, per window:
+%       bin_edges, bin_centers, bin_size_s, psth_pad_bins,
+%       event_times (block-local ephys time), trial_block, trial_n
+%       (within-block trial number), cond_mask, raster (logical).
+%       Monkey/Session come from the unit row at plot time.
+%       No behavior traces — plot resamples from accumulated_blocks.
+%   epochs  - cfg.EPOCHS plus event_time (block-local), rate_hz,
+%       trial_n (unit-local index into unit.trial), cond_mask.
+%       Saved under cfg.roots.epochs. No behavior backtrack.
 
-behavior_to_align = {'x_hnd', 'y_hnd', 'x_eye', 'y_eye'};
-behavior_to_downsample = {'x_eye', 'y_eye'};
-n_beh_ch = numel(behavior_to_align);
 conditions = cfg.CONDITIONS;
 
 neuron_id = unit.Neuron_ID;
 spike_times = unit.spike_times;
-samples = unit.sample;
 trials = unit.trial(:);
 if isempty(trials)
     trial_timestamps = zeros(1, 0);
@@ -40,11 +36,9 @@ else
 end
 
 window_rasters = cfg.WINDOWS(:);
-n_windows = numel(window_rasters);
-behavior = struct('channels', cell(n_windows, 1), 'data', cell(n_windows, 1));
 pad_bins = psth_smooth_pad_bins(cfg);
 
-for wi = 1:n_windows
+for wi = 1:numel(window_rasters)
     w = window_rasters(wi);
     bin_edges = w.t_start_s:cfg.raster_bin_size_s:w.t_end_s;
     bin_size_s = diff(bin_edges(1:2));
@@ -52,54 +46,44 @@ for wi = 1:n_windows
     right_edges = bin_edges(end) + (1:pad_bins) * bin_size_s;
     spike_edges = [left_edges, bin_edges, right_edges];
     event_times = unit.state.timestamps(unit.state.Value == w.align_state);
-    event_times = event_times(isfinite(event_times));
-    event_times = event_times(:);
+    %event_times = event_times(isfinite(event_times));
+    %event_times = event_times(:);
     n_events = numel(event_times);
     n_bins_pad = numel(spike_edges) - 1;
-    n_bins_beh = numel(bin_edges);
 
     raster_counts = zeros(n_events, n_bins_pad);
     trial_n = zeros(n_events, 1);
-    beh_data = zeros(n_events, n_bins_beh, n_beh_ch, 'single');
+    trial_block = zeros(n_events, 1);
+    unit_trial_idx = zeros(n_events, 1);
+    event_times_local = nan(n_events, 1);
 
     for k = 1:n_events
         rel_spike_times = spike_times - event_times(k);
         raster_counts(k, :) = histcounts(rel_spike_times, spike_edges);
         if isempty(trial_timestamps)
-            trial_n(k) = 0;
-        else
-            idx = find(trial_timestamps <= event_times(k), 1, 'last');
-            if isempty(idx), idx = 1; end
-            trial_n(k) = idx;
+            continue
         end
-
-        % One sample of pad so interp1 has anchors on each side of the window.
-        t_edges = event_times(k) + [bin_edges(1) bin_edges(end)];
-        sample_idx_s = find(samples.timestamps > t_edges(1), 1, 'first') - 1;
-        sample_idx_e = find(samples.timestamps < t_edges(2), 1, 'last') + 1;
-        sample_idx = sample_idx_s:sample_idx_e;
-        ts = samples.timestamps(sample_idx) - event_times(k);
-        for bv = 1:n_beh_ch
-            FN = behavior_to_align{bv};
-            beh_data(k, :, bv) = resample_trace( ...
-                ts, samples.(FN)(sample_idx), bin_edges, ...
-                ismember(FN, behavior_to_downsample), cfg.raster_smooth_samples);
-        end
+        idx = find(trial_timestamps <= event_times(k), 1, 'last');
+        if isempty(idx), idx = 1; end
+        tr = trials(idx);
+        unit_trial_idx(k) = idx;
+        trial_n(k) = tr.n;
+        trial_block(k) = tr.block;
+        event_times_local(k) = event_time_block_local(event_times(k), tr.block, unit);
     end
 
     window_rasters(wi).bin_edges = bin_edges(:);
     window_rasters(wi).bin_centers = spike_edges(1:end-1).' + bin_size_s/2;
     window_rasters(wi).bin_size_s = bin_size_s;
     window_rasters(wi).psth_pad_bins = pad_bins;
-    window_rasters(wi).event_times = event_times;
+    window_rasters(wi).event_times = event_times_local;
     window_rasters(wi).trial_n = trial_n;
-    window_rasters(wi).cond_mask = event_condition_mask(trials, trial_n, conditions);
+    window_rasters(wi).trial_block = trial_block;
+    window_rasters(wi).cond_mask = event_condition_mask(trials, unit_trial_idx, conditions);
     window_rasters(wi).raster = raster_counts > 0;
-    behavior(wi).channels = behavior_to_align;
-    behavior(wi).data = beh_data;
 end
 
-% One rate per align event. trial_n pairs epochs; cond_mask selects conditions.
+% One rate per align event. trial_n = unit-local index; cond_mask selects.
 epochs = cfg.EPOCHS(:);
 for ei = 1:numel(epochs)
     e = epochs(ei);
@@ -111,21 +95,23 @@ for ei = 1:numel(epochs)
 
     rate_hz = nan(n_events, 1);
     trial_n = zeros(n_events, 1);
+    event_times_local = nan(n_events, 1);
 
     for k = 1:n_events
         win_start = event_times(k) + e.t_start_s;
         win_end = event_times(k) + e.t_end_s;
         rate_hz(k) = sum(spike_times >= win_start & spike_times < win_end) / duration_s;
         if isempty(trial_timestamps)
-            trial_n(k) = 0;
-        else
-            idx = find(trial_timestamps <= event_times(k), 1, 'last');
-            if isempty(idx), idx = 1; end
-            trial_n(k) = idx;
+            continue
         end
+        idx = find(trial_timestamps <= event_times(k), 1, 'last');
+        if isempty(idx), idx = 1; end
+        tr = trials(idx);
+        trial_n(k) = idx;
+        event_times_local(k) = event_time_block_local(event_times(k), tr.block, unit);
     end
 
-    epochs(ei).event_time = event_times;
+    epochs(ei).event_time = event_times_local;
     epochs(ei).rate_hz = rate_hz;
     epochs(ei).trial_n = trial_n;
     epochs(ei).cond_mask = event_condition_mask(trials, trial_n, conditions);
@@ -134,19 +120,31 @@ end
 Neuron_ID = neuron_id; %#ok<NASGU>
 windows = window_rasters; %#ok<NASGU>
 raster_file = fullfile(cfg.roots.raster, sprintf('%s_raster.mat', neuron_id));
-save(raster_file, 'Neuron_ID', 'windows', 'behavior', 'epochs');
+epoch_file = fullfile(cfg.roots.epochs, sprintf('%s_epochs.mat', neuron_id));
+save(raster_file, 'Neuron_ID', 'windows');
+save(epoch_file, 'Neuron_ID', 'epochs');
 end
 
-function cond_mask = event_condition_mask(trials, trial_n, conditions)
-% n_events x n_conditions. An event can match several conditions.
-n_events = numel(trial_n);
+function t_local = event_time_block_local(event_time_concat, block, unit)
+% Undo the segment_start shift for this block.
+bi = find(unit.Blocks == block, 1, 'first');
+if isempty(bi)
+    t_local = NaN;
+    return
+end
+t_local = event_time_concat - unit.segment_starts(bi);
+end
+
+function cond_mask = event_condition_mask(trials, unit_trial_idx, conditions)
+% n_events x n_conditions. unit_trial_idx indexes into trials (not trial.n).
+n_events = numel(unit_trial_idx);
 n_cond = numel(conditions);
 cond_mask = false(n_events, n_cond);
-valid = trial_n(:) >= 1 & trial_n(:) <= numel(trials);
+valid = unit_trial_idx(:) >= 1 & unit_trial_idx(:) <= numel(trials);
 if ~any(valid) || isempty(trials) || n_cond == 0
     return
 end
-ev_trials = trials(trial_n(valid));
+ev_trials = trials(unit_trial_idx(valid));
 for ci = 1:n_cond
     keep = true(nnz(valid), 1);
     param_names = fieldnames(conditions(ci).parameters);
@@ -178,17 +176,4 @@ switch lower(char(cfg.psth.smoothing_kernel))
         kernel_bins = 1;
 end
 pad_bins = ceil((kernel_bins - 1) / 2);
-end
-
-function vq = resample_trace(ts, v, grid, downsample, smooth_samples)
-% Drop held samples, interp1 onto grid, then boxcar-smooth.
-ts = ts(:); v = v(:);
-if downsample
-    keep = unique([find([true; diff(v) ~= 0]); numel(v)]);
-    ts = ts(keep); v = v(keep);
-end
-vq = single(interp1(ts, v, grid(:), 'linear'));
-if smooth_samples > 1
-    vq = movmean(vq, smooth_samples, 'omitnan');
-end
 end
