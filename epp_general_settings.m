@@ -9,20 +9,16 @@ function cfg = epp_general_settings(project, cfg)
 %               (set by epp_load_cfg). Missing cfg starts from struct().
 %
 %   Outputs:
-%     cfg - same struct with cfg.roots.* (settings, sorting_tables,
-%           ephys_tanks, behavior, project_version, processed_trials, raster,
-%           psth, population_psth, statistics), cfg.sorting_sheet,
-%           cfg.spike_threshold, cfg.unit_info_file, cfg.monkeys, cfg.datasets,
-%           cfg.raster_bin_size_s, cfg.raster_smooth_samples,
-%           cfg.WINDOWS, cfg.EPOCHS (cell table),
-%           cfg.CONDITIONS, cfg.psth, cfg.movements, cfg.min_edge_rate_hz,
-%           and cfg.statistics filled in.
-%           Existing fields are overwritten. Project/version scripts may
-%           override them afterward.
+%     cfg with defaults for:
+%       roots.*, sorting_sheet, spike_threshold, unit_info_file,
+%       monkeys, datasets, session_range, todo.*,
+%       min_edge_rate_hz, raster_*, WINDOWS, EPOCHS, CONDITIONS,
+%       movements, psth, statistics.
+%     Project/version scripts may override afterward.
 %
-% Minimal general settings for epp_initiation.
-%
-% This only defines paths required by the unit initializer.
+%   Pipeline toggles (cfg.todo.*): false skips that stage in epp_initiation.
+%   session_range: optional per-monkey inclusive Session date bounds
+%     cfg.session_range.<Monkey> = [YYYYMMDD YYYYMMDD]; missing/[] = all.
 
 if nargin < 2 || isempty(cfg)
     cfg = struct;
@@ -55,6 +51,19 @@ cfg.unit_info_file = fullfile(cfg.roots.project_version, 'unit_info.mat');
 % Default pipeline behavior (project/version settings may override).
 cfg.monkeys = {};
 cfg.datasets = [];
+
+% Inclusive Session date range per monkey: [start_YYYYMMDD end_YYYYMMDD].
+% Missing field or [] keeps all sessions for that monkey.
+% Example: cfg.session_range.Feno = [20170501 20171231];
+cfg.session_range.Feno = [0 inf];
+
+% Which stages epp_initiation runs (project/version may flip these).
+cfg.todo.unit_info = true;              % sorting tables -> unit_info.mat
+cfg.todo.prepare_blocks = true;         % sync behavior, write block payloads
+cfg.todo.build_rasters = true;          % load unit + write rasters/epochs
+cfg.todo.plot_psth = true;              % per-unit PSTH PNG
+cfg.todo.compute_statistics = true;     % epoch tests + unit_statistics table
+cfg.todo.plot_population_psth = true;   % population mean PSTH from rasters
 
 % Drop leading and trailing trials at or below this rate (spikes/s).
 % Rate is that unit's spikes from one trial timestamp to the next.

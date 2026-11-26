@@ -4,22 +4,18 @@ function unit_statistic = epp_compute_statistics(cfg, unit_row)
 %   unit_statistic = epp_compute_statistics(cfg, unit_row)
 %
 %   Inputs:
-%     cfg - struct from epp_load_cfg. Reads
-%           cfg.roots.epochs/<Neuron_ID>_epochs.mat (from epp_build_rasters).
-%           Uses cfg.statistics.comparisons.
-%           Condition grouping uses epochs(ei).cond_mask. Does not read
-%           spike files.
-%     unit_row - one element of unit_info.
+%     cfg      - from epp_load_cfg. Reads
+%                cfg.roots.epochs/<Neuron_ID>_epochs.mat; uses
+%                cfg.statistics.comparisons and cond_mask. No spike files.
+%     unit_row - one unit_info element (Neuron_ID).
 %
 %   Outputs:
-%     unit_statistic - struct with .Neuron_ID and .comparisons.<name>
-%           (n_a, n_b, p, tstat, df, mean_a, mean_b, comparison metadata).
-%           epp_save_unit_statistics writes the table for every unit.
+%     unit_statistic.Neuron_ID, .comparisons.<name> with n_a/n_b, p, tstat,
+%     df, mean_a/mean_b, and comparison metadata.
 %
-%   Each epochs row is one align event. An event is kept when any of the
-%   requested cond_mask columns is true. Unpaired tests use those events.
-%   Paired tests match on unit-local trial_n and keep a trial only when both
-%   epochs have the same number of events from it.
+%   Events kept when any requested cond_mask column is true. Unpaired:
+%   pool those rates. Paired: match unit-local trial_n; require equal event
+%   counts per trial; sort by event_time.
 
 unit_statistic = struct('Neuron_ID', unit_row.Neuron_ID, 'comparisons', struct());
 epochs_file = fullfile(cfg.roots.epochs, sprintf('%s_epochs.mat', unit_row.Neuron_ID));

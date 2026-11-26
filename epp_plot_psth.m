@@ -1,39 +1,24 @@
 function epp_plot_psth(cfg, UI, accumulated_blocks)
-%EPP_PLOT_PSTH  Stage 4: condition-split PSTH and binned raster for one unit.
+%EPP_PLOT_PSTH  Per-unit PSTH + rasters + eye/hand traces.
 %
 %   epp_plot_psth(cfg, unit_row, accumulated_blocks)
 %
 %   Inputs:
-%     cfg - struct from epp_load_cfg.
-%     unit_row - one element of unit_info. Loads windows from
-%           cfg.roots.raster/<Neuron_ID>_raster.mat (epochs skipped).
-%           Uses windows(wi).cond_mask for grouping. Eye/hand come from
-%           accumulated_blocks via UI.Monkey/UI.Session + trial_block/trial_n
-%           and block-local event_times. Returns without writing if missing.
-%     accumulated_blocks - block_payload array from epp_initiation.
-%           Uses cfg.CONDITIONS for colors and names, and cfg.psth.condition_subplots
-%           for axes. condition_subplots empty: all conditions on one axes.
-%           A cell of index vectors: one vertical subplot per cell.
-%           Condition means are computed here from the aligned raster.
-%           A trial that matches several conditions is drawn in each of them.
+%     cfg                - from epp_load_cfg (CONDITIONS, psth.*, roots.psth).
+%     unit_row           - one unit_info row (Monkey, Session, Blocks, ...).
+%     accumulated_blocks - block_payload array (sample streams, block-local time).
+%
+%   Loads cfg.roots.raster/<Neuron_ID>_raster.mat (windows only). Groups by
+%   cond_mask. Eye/hand: UI.Monkey/Session + trial_block/trial_n + event_times
+%   against accumulated_blocks. Multi-match trials drawn in every condition.
+%   cfg.psth.condition_subplots: {} = one axes; cell of index vectors = vertical
+%   subplots. Within one axes, all windows share one y_max (Hz).
 %
 %   Outputs:
-%     none. For each unit that has a raster file, writes
-%       cfg.roots.psth/<Neuron_ID>_psth.png
-%       cfg.roots.psth/<Neuron_ID>_psth.mat  (variable psth_data)
-%     psth_data.Neuron_ID, psth_data.windows(wi).name, .align_state,
-%     .conditions (name, n_trials, bin_centers_s, mean_rate_hz, sem_rate_hz).
-%     The raster, trials, and behavior traces are not written again.
-%     Windows are concatenated on one axes (0.1 s gap). X tick labels are
-%     time within each window. The y-axis is PSTH (top half), rasters (next
-%     quarter), then eye and hand traces (bottom quarter). Y ticks are rate
-%     and stay in the PSTH half. The number at the trace height is the
-%     position span from each trace center to the edge of its band, snapped
-%     to 1, 2, or 5 times a power of ten. Eye and hand traces of one condition
-%     are a single line in that condition's color. Raster squares are one
-%     per occupied bin. A trial is drawn in every condition it matches.
-%
-% Stage 4: load aligned rasters, group by condition, plot PSTH + rasters.
+%     cfg.roots.psth/<Neuron_ID>_psth.png
+%     Layout: PSTH top half, rasters next quarter, traces bottom quarter.
+%     Trace-height text = 1-2-5 position span. One line object per condition
+%     for eye+hand (NaN breaks).
 
 Neuron_ID = UI.Neuron_ID;
 raster_file = fullfile(cfg.roots.raster, sprintf('%s_raster.mat', Neuron_ID));

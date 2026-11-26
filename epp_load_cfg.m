@@ -3,20 +3,15 @@ function cfg = epp_load_cfg(project, version)
 %
 %   cfg = epp_load_cfg(project, version)
 %
-%   Inputs:
-%     project - char/string. Loads settings/<project>/general_project_settings.m
-%               when that file exists (warning if missing).
-%     version - char/string. Stored as cfg.project_version and used to load
-%               settings/<project>/<version>.m (warning if missing).
+%   Order: epp_general_settings -> settings/<project>/general_project_settings.m
+%   -> settings/<project>/<version>.m (run() into this workspace; assign cfg).
 %
-%   Outputs:
-%     cfg - struct. Settings scripts are run() in this function's workspace and
-%           must assign into cfg. cfg.EPOCHS is converted from a cell table
-%           (name, state, start, end) to a struct array with name, align_state,
-%           t_start_s, t_end_s. cfg.statistics.comparisons is a struct array
-%           merged from cfg.statistics.within_epoch and .across_epochs.
-%           Every non-empty cfg.roots.* folder is created if it does not exist,
-%           including input roots.
+%   Then: EPOCHS cell table -> struct; statistics tables -> comparisons;
+%   mkdir every non-empty cfg.roots.*.
+%
+%   Pipeline controls (defaults in general_settings, override in project/version):
+%     cfg.todo.*            stage toggles for epp_initiation
+%     cfg.session_range.<M> [start end] Session YYYYMMDD bounds per monkey
 
 epp_ensure_paths();
 

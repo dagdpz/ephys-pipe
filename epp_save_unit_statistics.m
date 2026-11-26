@@ -3,9 +3,13 @@ function epp_save_unit_statistics(cfg, unit_statistics)
 %
 %   epp_save_unit_statistics(cfg, unit_statistics)
 %
-%   unit_statistics is the array returned, one element per unit, by
-%   epp_compute_statistics. Writes cfg.roots.statistics/unit_statistics.mat
-%   and unit_statistics.xlsx.
+%   Inputs:
+%     cfg             - roots.statistics
+%     unit_statistics - combined array after initiation merges this run's
+%                       units into any existing file by Neuron_ID
+%
+%   Writes cfg.roots.statistics/unit_statistics.mat (unit_statistics +
+%   statistics_table) and unit_statistics.xlsx.
 
 statistics_table = unit_statistics_to_table(unit_statistics);
 save(fullfile(cfg.roots.statistics, 'unit_statistics.mat'), 'unit_statistics', 'statistics_table');

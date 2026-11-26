@@ -1,28 +1,23 @@
 function epp_build_rasters(cfg, unit)
-%EPP_BUILD_RASTERS  Stage 2: one unit's event-aligned raster.
+%EPP_BUILD_RASTERS  Event-aligned spike rasters and epoch rates for one unit.
 %
 %   epp_build_rasters(cfg, unit)
 %
 %   Inputs:
-%     cfg  - struct from epp_load_cfg. Uses cfg.WINDOWS, cfg.EPOCHS,
-%            cfg.CONDITIONS (baked into cond_mask), cfg.psth (pad width),
-%            cfg.raster_bin_size_s, cfg.roots.raster.
-%     unit - one unit from epp_load_unit_combined.
+%     cfg  - from epp_load_cfg. Uses WINDOWS, EPOCHS, CONDITIONS, psth pad,
+%            raster_bin_size_s, roots.raster / roots.epochs.
+%     unit - from epp_load_unit_combined (trial, state, spike_times,
+%            Blocks, segment_starts, Neuron_ID).
 %
 %   Outputs:
-%     none. Writes cfg.roots.raster/<Neuron_ID>_raster.mat with top-level
-%     variables so callers can load selectively:
-%       Neuron_ID, windows, epochs
+%     cfg.roots.raster/<Neuron_ID>_raster.mat  -> Neuron_ID, windows
+%     cfg.roots.epochs/<Neuron_ID>_epochs.mat  -> Neuron_ID, epochs
 %
-%   windows - cfg.WINDOWS plus, per window:
-%       bin_edges, bin_centers, bin_size_s, psth_pad_bins,
-%       event_times (block-local ephys time), trial_block, trial_n
-%       (within-block trial number), cond_mask, raster (logical).
-%       Monkey/Session come from the unit row at plot time.
-%       No behavior traces — plot resamples from accumulated_blocks.
-%   epochs  - cfg.EPOCHS plus event_time (block-local), rate_hz,
-%       trial_n (unit-local index into unit.trial), cond_mask.
-%       Saved under cfg.roots.epochs. No behavior backtrack.
+%   windows(wi): bin_edges/centers, psth_pad_bins, event_times (block-local),
+%     trial_block, trial_n (within-block .n), cond_mask, raster (logical).
+%     No behavior traces (plot resamples from accumulated_blocks).
+%   epochs(ei): event_time (block-local), rate_hz, trial_n (unit-local index),
+%     cond_mask.
 
 conditions = cfg.CONDITIONS;
 

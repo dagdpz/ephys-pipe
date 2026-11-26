@@ -1,28 +1,17 @@
 function units = epp_sorting_table_to_units(monkey, cfg)
-%EPP_SORTING_TABLE_TO_UNITS  Read automatic_sorting rows into a struct array.
+%EPP_SORTING_TABLE_TO_UNITS  Read UltraSort sheet into a unit struct array.
 %
 %   units = epp_sorting_table_to_units(monkey, cfg)
 %
 %   Inputs:
-%     monkey - char/string. Table path is
-%              <cfg.roots.sorting_tables>/<monkey>/<monkey(1:3)>_UltraSort.xls*.
-%              monkey must be at least 3 characters.
-%     cfg    - struct. cfg.datasets (numeric) keeps rows whose Dataset column
-%              is in that list. Empty cfg.datasets keeps every dataset.
+%     monkey - table at <roots.sorting_tables>/<monkey>/<monkey(1:3)>_UltraSort.xls*
+%     cfg    - sorting_sheet, datasets (empty = all Dataset values)
 %
 %   Outputs:
-%     units - column struct array, one element per kept row. Field names are
-%             the sheet headers passed through matlab.lang.makeValidName.
-%             Numeric-looking columns become double; columns whose every value
-%             is 0/1/true/false become logical. Blocks and Perturbation are
-%             parsed from pipe text ('|2|5|') into numeric row vectors.
-%             Perturbation is expanded to one value per block (missing -> 0).
-%             Rows with Unit == 0 are dropped. Empty result is struct([]) when
-%             the workbook, sheet, or filter yields nothing (warning only if
-%             the file or sheet is missing/empty). Sheet read: cfg.sorting_sheet.
-%
-% epp_sorting_table_to_units
-% Convert sorting-table rows to unit struct array with dataset/unit filtering.
+%     One struct per kept row (headers -> makeValidName). Blocks/Perturbation
+%     parsed from '|2|5|' text; Perturbation length-matched to Blocks.
+%     Unit == 0 dropped. Session date filtering is NOT done here (initiation
+%     applies cfg.session_range after stacking monkeys).
 
 units = struct([]);
 filename = [monkey(1:3) '_UltraSort'];

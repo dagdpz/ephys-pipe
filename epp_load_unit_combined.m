@@ -1,19 +1,22 @@
 function unit = epp_load_unit_combined(UI, Blocks_in, cfg)
-%EPP_LOAD_UNIT_COMBINED  Align one unit's spikes with its behavioral blocks.
+%EPP_LOAD_UNIT_COMBINED  Spikes + concatenated trials/states for one unit.
 %
-%   unit = epp_load_unit(unit_row, processed_blocks, cfg)
+%   unit = epp_load_unit_combined(unit_row, accumulated_blocks, cfg)
 %
-%   Called by epp_build_rasters. epp_compute_statistics reads the epoch
-%   rates that stage saves and does not call this again.
+%   Inputs:
+%     UI        - one unit_info row (Monkey, Session, Filenumber, Channel,
+%                 Unit, Blocks, Perturbation, Hemisphere, Neuron_ID, ...).
+%     Blocks_in - block_payload array; filtered to this Monkey/Session.
+%     cfg       - spike_threshold, min_edge_rate_hz, roots.ephys_tanks.
 %
-%   Spike file (UltraSort): dataspikes_rb<FFF>_ch<CCC>_<cfg.spike_threshold>.mat with
-%   cluster_class (sort code, time in ms) and par.sr. segmentends come from
-%   datafused_rb<FFF>_ch<CCC>.mat (par.segmentends), same as UltraLoadData.
-%   Block i of the unit is time-shifted by segment start i. Trials then pass
-%   through epp_enrich_trials_for_unit. Edge trials at or below
-%   cfg.min_edge_rate_hz are removed.
+%   Spikes: dataspikes_rb<FFF>_ch<CCC>_<threshold>.mat (ms -> s).
+%   Segments: datafused_rb<FFF>_ch<CCC>.mat par.segmentends -> segment_starts.
+%   Trials/states shifted by segment_starts(bi) into concatenated time;
+%   trial.block / perturbation stamped; hemisphere flip on trial fields.
+%   Edge trials with FR <= cfg.min_edge_rate_hz trimmed (states cropped too).
+%   Samples are NOT kept on unit (plot uses accumulated_blocks).
 %
-%   unit.trial, .state, .sample, .spike_times
+%   unit: UI fields + segment_starts, spike_times, trial, state.
 
 Blocks_in =Blocks_in([Blocks_in.session] == UI.Session & strcmp({Blocks_in.monkey}, UI.Monkey));
 

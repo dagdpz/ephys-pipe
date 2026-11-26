@@ -1,23 +1,17 @@
 function epp_plot_population_psth(cfg)
-%EPP_PLOT_POPULATION_PSTH  Stage 5: mean PSTH across units from rasters.
+%EPP_PLOT_POPULATION_PSTH  Population mean PSTH from unit rasters.
 %
 %   epp_plot_population_psth(cfg)
 %
 %   Inputs:
-%     cfg - struct from epp_load_cfg. Reads *_raster.mat from cfg.roots.raster
-%           (Neuron_ID, windows). Builds condition PSTHs here from
-%           windows(wi).raster + cond_mask, same pad/smooth/crop as
-%           epp_plot_psth. Uses cfg.CONDITIONS for names and colors.
+%     cfg - from epp_load_cfg. Loads every *_raster.mat under roots.raster
+%           (Neuron_ID, windows). Builds condition means from raster +
+%           cond_mask (same pad/smooth/crop as epp_plot_psth).
 %
 %   Outputs:
-%     none. Writes cfg.roots.population_psth/population_psth.png and
-%     population_psth.mat (variable pop_data).
-%     pop_data.n_units, pop_data.Neuron_ID (cellstr).
-%     pop_data.windows(wi).name, .align_state, .conditions(ci) with name,
-%     n_units, n_trials_total, bin_centers_s, mean_rate_hz, sem_rate_hz.
-%     Mean and SEM are across units, not across trials.
-%
-% Stage 5: aggregate per-unit condition PSTHs into population mean +/- SEM.
+%     cfg.roots.population_psth/population_psth.png
+%     population_psth.mat (pop_data): n_units, Neuron_ID, windows(wi).conditions
+%     with mean/sem across units (not trials).
 
 epp_ensure_paths();
 unit_rasters = load_unit_raster_windows(cfg.roots.raster);
